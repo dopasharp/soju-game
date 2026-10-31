@@ -73,8 +73,8 @@ function init3D(){
  const dropMat=new THREE.MeshPhysicalMaterial({color:0xc7ffff,roughness:.08,metalness:0,transparent:true,opacity:.85});
  const drops3d=Array.from({length:42},()=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.052,8,8),dropMat);m.scale.set(.7,1.8,.7);scene.add(m);return m});
  const streamMat=new THREE.MeshBasicMaterial({color:0xb4f8ff,transparent:true,opacity:.58,depthWrite:false});
- const stream=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,1,12),streamMat);scene.add(stream);
- visual3d={renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,glassGroup,liquid,surface,drops3d,stream};
+ const stream=new THREE.Mesh(new THREE.BufferGeometry(),streamMat);scene.add(stream);const splashMat=new THREE.MeshBasicMaterial({color:0xdfffff,transparent:true,opacity:.7,depthWrite:false});const splashes=Array.from({length:16},()=>{const p=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),splashMat);scene.add(p);return p});
+ visual3d={renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,glassGroup,liquid,surface,drops3d,stream,splashes};
  $('stage').classList.add('webgl');canvas.classList.remove('hidden');
  const resize=()=>{const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};
  new ResizeObserver(resize).observe(stage);resize();
@@ -82,7 +82,7 @@ function init3D(){
 }
 function animate3D(now,active,aim){
  const v=visual3d;if(!v)return;
- const {renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,glassGroup,liquid,surface,drops3d,stream}=v;
+ const {renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,glassGroup,liquid,surface,drops3d,stream,splashes}=v;
  const h=stage.clientHeight,w=stage.clientWidth;
  bottle.visible=role==='bottle';glassGroup.visible=role==='glass';
  const time=now*.001;
@@ -108,10 +108,51 @@ function animate3D(now,active,aim){
   surface.position.y=level+.08;
  }
  const pouring=role==='bottle'?active:!!latest?.pouring;
- const x=role==='glass'?(aim-.5)*2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z*(w/h):-.12;
- const top=role==='glass'?4:1.7,bottom=role==='glass'?-2.2:.3;
- stream.visible=pouring;stream.position.set(x,(top+bottom)/2,.25);stream.scale.set(1,top-bottom,1);
- drops3d.forEach((d,i)=>{d.visible=pouring;if(!pouring)return;const t=((time*2.7+i/42)%1);d.position.set(x+Math.sin(i*18.3)*.06,top-(top-bottom)*t,.35);d.scale.set(.65,1.5+Math.sin(time*6+i)*.5,.65)});
+ const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
+ const x=role==='glass'?(aim-.5)*visibleH*(w/h):0;
+ const top=role==='glass'?visibleH*.54:1.98;
+ const bottom=role==='glass'?glassGroup.position.y+1.7:-.3;
+ const length=Math.max(.4,top-bottom);
+ const speed=3.6,phase=time*speed;
+ // A tapered, gently wandering stream whose surface ripples downwards.
+ stream.visible=pouring;
+ if(pouring){
+  const count=48,around=8,vertices=[],normals=[],indices=[];
+  for(let j=0;j<=count;j++){
+   const t=j/count,y=top-length*t;
+   const centerX=x+(role==='bottle'?.2*t*t:0)+Math.sin(t*16-phase*2)*(.014+.02*t);
+   const centerZ=.4+Math.cos(t*13-phase*1.7)*.014;
+   const radius=(.046-.024*t)*(1+.14*Math.sin(t*55-phase*10));
+   for(let k=0;k<around;k++){
+    const a=k*Math.PI*2/around;
+    vertices.push(centerX+Math.cos(a)*radius,y,centerZ+Math.sin(a)*radius);
+    normals.push(Math.cos(a),0,Math.sin(a));
+    if(j<count){const n=j*around+k,next=j*around+(k+1)%around;indices.push(n,next,n+around,next,next+around,n+around)}
+   }
+  }
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+  geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  geometry.setIndex(indices);
+  stream.geometry.dispose();stream.geometry=geometry;
+ }
+ drops3d.forEach((d,i)=>{
+  d.visible=pouring;if(!pouring)return;
+  const t=((phase*.62+i/42)%1);
+  const breakaway=t>.62;
+  d.visible=breakaway||i%7===0;
+  const lateral=role==='bottle'?.2*t*t:0;
+  d.position.set(x+lateral+Math.sin(i*13.7+phase)*(.02+.05*t),top-length*t,.42);
+  const scale=breakaway?.5+.45*t:.3;
+  d.scale.set(scale,scale*(1.6+Math.sin(i+phase)*.3),scale);
+ });
+ splashes.forEach((p,i)=>{
+  const impact=role==='glass'&&pouring&&Math.abs(x-glassGroup.position.x)<1;
+  p.visible=impact;if(!impact)return;
+  const t=(time*2.7+i*.173)%1,a=i*2.39996;
+  p.position.set(x+Math.cos(a)*t*.35,bottom+Math.sin(t*Math.PI)*.25,.45+Math.sin(a)*t*.22);
+  p.scale.setScalar((1-t)*(.8+((i*7)%5)*.15));
+ });
  renderer.render(scene,camera);
 }
 
