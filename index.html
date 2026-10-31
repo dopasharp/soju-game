@@ -18,7 +18,7 @@ const firebaseConfig = {
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {getDatabase,ref,set,update,onValue,get,runTransaction,remove,onDisconnect} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
-const $=id=>document.getElementById(id);let db,room='',role='',off=null,tilt=0,signedTilt=0,side=0,glassSide=1,sensorSign=1,sensorBaseGamma=null,sensorBaseBeta=0,manual=false,amount=0,connected=false,glassX=.5,spoutX=.12,spoutY=.42,latest=null,lastTick=performance.now(),lastSend=0,done=false,visual3d=null,toastTimer=null,capOpen=false,capOpenedAt=0,lastCapTap=0,touchRotationX=0,touchRotationY=0,touchStartX=0,touchStartY=0,touchDragging=false;
+const $=id=>document.getElementById(id);let db,room='',role='',off=null,tilt=0,signedTilt=0,side=0,glassSide=1,sensorSign=1,sensorBaseGamma=null,sensorBaseBeta=0,manual=false,amount=0,connected=false,glassX=.5,spoutX=.12,spoutY=.42,latest=null,lastTick=performance.now(),lastSend=0,done=false,visual3d=null,toastTimer=null,capOpen=false,capOpenedAt=0,lastCapTap=0,glassLift=0,glassTiltTarget=0,glassHeld=false,touchRotationX=0,touchRotationY=0,touchStartX=0,touchStartY=0,touchDragging=false;
 const configured=!firebaseConfig.apiKey.startsWith('PASTE_')&&!firebaseConfig.databaseURL.includes('PASTE_');
 try{if(configured)db=getDatabase(initializeApp(firebaseConfig));}catch(e){alert('Firebase 설정 오류: '+e.message)}
 function msg(t){$('status').textContent=t}function rnd(){return Math.random().toString(36).slice(2,8).toUpperCase()}
@@ -26,7 +26,7 @@ function r(){return ref(db,'sojuRooms/'+room)}
 function showToast(message,duration=2200){$('copyToast').textContent=message;$('copyToast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('copyToast').classList.add('hidden'),duration)}
 async function copyRoomCode(){try{await navigator.clipboard.writeText(room);showToast('📋 방 번호 '+room+' 복사 완료!')}catch(e){showToast('방 번호: '+room+' (길게 눌러 복사하세요)')}}
 $('roomFloating').onclick=copyRoomCode;
-async function enter(which,code){if(!db){alert('index.html의 firebaseConfig를 먼저 설정해주세요.');return}try{room=code;role=which;const snap=await get(r());if(which==='bottle'){if(snap.exists())throw Error('이미 사용 중인 방 코드입니다. 다시 시도하세요.');await set(r(),{createdAt:Date.now(),bottleOnline:true,glassOnline:false,amount:0,pouring:false,aim:.5,tilt:0});}else{if(!snap.exists())throw Error('방을 찾을 수 없습니다.');if(snap.val().glassOnline)throw Error('이미 잔 플레이어가 들어와 있습니다.');await update(r(),{glassOnline:true});}const presenceRef=ref(db,`sojuRooms/${room}/${role==='bottle'?'bottleOnline':'glassOnline'}`);onValue(ref(db,'.info/connected'),async snap=>{if(!snap.val()||!room)return;try{await onDisconnect(presenceRef).set(false);await set(presenceRef,true);}catch(e){console.warn('Presence sync failed',e);msg('연결 상태 동기화 실패: '+e.message);}});$('setup').classList.add('hidden');$('game').classList.remove('hidden');document.querySelector('.wrap').classList.add('playing');$('roomTag').textContent=room;$('roomFloating').textContent='🔗 방 '+room;$('roomFloating').classList.remove('hidden');$('roleTitle').textContent=role==='bottle'?'🍶 소주병':'🥃 소주잔';$('bottle').classList.toggle('hidden',role!=='bottle');$('spout').classList.toggle('hidden',role!=='bottle');$('glass').classList.toggle('hidden',role!=='glass');$('sensor').classList.toggle('hidden',role!=='bottle');$('pour').classList.toggle('hidden',role!=='bottle');if(role==='bottle'){$('settings').open=false;$('calibrateOverlay').classList.remove('hidden');}$('openCap').classList.toggle('hidden',role!=='bottle');$('hint').textContent=role==='bottle'?'잔은 왼쪽, 병은 오른쪽에 고정하고 병을 기울여 따르세요':'잔은 왼쪽에 고정돼 있어요. 오른쪽 병 폰을 기울여 따르세요';off=onValue(r(),s=>{if(!s.exists()){msg('방이 종료됐습니다.');return}latest=s.val();amount=latest.amount||0;connected=!!(latest.bottleOnline&&latest.glassOnline);$('score').textContent=`${Math.floor(amount)} / 100 ml`;$('miniScore').textContent=`${Math.floor(amount)} ml`;$('fill').style.width=Math.min(100,amount)+'%';$('liquid').style.height=Math.min(100,amount)+'%';if(amount>=100){msg('🎉 짠! 가득 채웠어요!');done=true}else if(!connected){msg('상대방 접속을 기다리는 중... (병 '+(latest.bottleOnline?'접속':'미접속')+' / 잔 '+(latest.glassOnline?'접속':'미접속')+')')}else{msg(latest.pouring?'💧 소주 따르는 중!':'연결 완료! 소주병을 기울여 주세요.')}if(role==='glass')$('angleText').textContent=`기울기 ${Math.round(latest.tilt||0)}°`;});render();init3D();}catch(e){alert(e.message);room='';role='';}}
+async function enter(which,code){if(!db){alert('index.html의 firebaseConfig를 먼저 설정해주세요.');return}try{room=code;role=which;const snap=await get(r());if(which==='bottle'){if(snap.exists())throw Error('이미 사용 중인 방 코드입니다. 다시 시도하세요.');await set(r(),{createdAt:Date.now(),bottleOnline:true,glassOnline:false,amount:0,pouring:false,aim:.5,tilt:0});}else{if(!snap.exists())throw Error('방을 찾을 수 없습니다.');if(snap.val().glassOnline)throw Error('이미 잔 플레이어가 들어와 있습니다.');await update(r(),{glassOnline:true});}const presenceRef=ref(db,`sojuRooms/${room}/${role==='bottle'?'bottleOnline':'glassOnline'}`);onValue(ref(db,'.info/connected'),async snap=>{if(!snap.val()||!room)return;try{await onDisconnect(presenceRef).set(false);await set(presenceRef,true);}catch(e){console.warn('Presence sync failed',e);msg('연결 상태 동기화 실패: '+e.message);}});$('setup').classList.add('hidden');$('game').classList.remove('hidden');document.querySelector('.wrap').classList.add('playing');$('roomTag').textContent=room;$('roomFloating').textContent='🔗 방 '+room;$('roomFloating').classList.remove('hidden');$('roleTitle').textContent=role==='bottle'?'🍶 소주병':'🥃 소주잔';$('bottle').classList.toggle('hidden',role!=='bottle');$('spout').classList.toggle('hidden',role!=='bottle');$('glass').classList.toggle('hidden',role!=='glass');$('sensor').classList.toggle('hidden',role!=='bottle');$('pour').classList.toggle('hidden',role!=='bottle');if(role==='bottle'){$('settings').open=false;$('calibrateOverlay').classList.remove('hidden');}$('openCap').classList.toggle('hidden',role!=='bottle');$('hint').textContent=role==='bottle'?'잔은 왼쪽, 병은 오른쪽에 고정하고 병을 기울여 따르세요':'잔은 왼쪽에 고정돼 있어요. 오른쪽 병 폰을 기울여 따르세요';off=onValue(r(),s=>{if(!s.exists()){msg('방이 종료됐습니다.');return}latest=s.val();amount=latest.amount||0;connected=!!(latest.bottleOnline&&latest.glassOnline);$('score').textContent=`${Math.floor(amount)} / 100 ml`;$('miniScore').textContent=`${Math.floor(amount)} ml`;$('fill').style.width=Math.min(100,amount)+'%';$('liquid').style.height=Math.min(100,amount)+'%';done=amount>=100;if(done){msg('🎉 짠! 가득 채웠어요!')}else if(!connected){msg('상대방 접속을 기다리는 중... (병 '+(latest.bottleOnline?'접속':'미접속')+' / 잔 '+(latest.glassOnline?'접속':'미접속')+')')}else{msg(latest.pouring?'💧 소주 따르는 중!':'연결 완료! 소주병을 기울여 주세요.')}if(role==='glass')$('angleText').textContent=`기울기 ${Math.round(latest.tilt||0)}°`;});render();init3D();}catch(e){alert(e.message);room='';role='';}}
 $('create').onclick=()=>enter('bottle',rnd());$('join').onclick=()=>{let c=$('code').value.trim().toUpperCase();if(!/^[A-Z0-9]{6}$/.test(c))return alert('6자리 방 코드를 입력해주세요.');enter('glass',c)};
 $('leave').onclick=async()=>{if(db&&room){try{if(role==='bottle')await remove(r());else await update(r(),{glassOnline:false,pouring:false});}catch(e){console.warn(e)}}location.reload()};
 $('reset').onclick=async()=>{if(room){await update(r(),{amount:0,pouring:false});done=false;}};
@@ -35,27 +35,47 @@ async function enableSensor(){try{if(typeof DeviceOrientationEvent==='undefined'
 $('sensor').onclick=enableSensor;$('calibrateConfirm').onclick=enableSensor;
 $('openCap').onclick=()=>{capOpen=!capOpen;capOpenedAt=performance.now();$('openCap').textContent=capOpen?'🍾 뚜껑 닫기':'🍾 뚜껑 열기';};
 $('reverse').onclick=()=>{sensorSign*=-1;$('reverse').textContent=sensorSign===1?'↔ 센서 방향 반대로':'↔ 센서 방향 반전됨';};const test=$('pour');for(const evt of ['pointerdown','pointerup','pointercancel','pointerleave'])test.addEventListener(evt,e=>{manual=evt==='pointerdown';if(manual)test.setPointerCapture(e.pointerId)});
-const stage=$('stage');let draggingGlass=false;stage.addEventListener('pointerdown',e=>{if(role!=='bottle')return;const v=visual3d;if(v){const capPoint=new THREE.Vector3(0,1.9,0);v.bottle.localToWorld(capPoint);capPoint.project(v.camera);const rect=stage.getBoundingClientRect(),px=(capPoint.x*.5+.5)*rect.width+rect.left,py=(-capPoint.y*.5+.5)*rect.height+rect.top;if(Math.hypot(e.clientX-px,e.clientY-py)<Math.max(85,rect.width*.22)){const t=performance.now();if(t-lastCapTap<550){capOpen=!capOpen;capOpenedAt=t;$('openCap').textContent=capOpen?'🍾 뚜껑 닫기':'🍾 뚜껑 열기';lastCapTap=0;touchDragging=false;return;}lastCapTap=t;}}touchDragging=true;touchStartX=e.clientX;touchStartY=e.clientY;stage.setPointerCapture(e.pointerId)});stage.addEventListener('pointermove',e=>{if(!touchDragging||role!=='bottle')return;touchRotationY+=(e.clientX-touchStartX)*.012;touchStartX=e.clientX;touchStartY=e.clientY});stage.addEventListener('pointerup',()=>touchDragging=false);stage.addEventListener('pointercancel',()=>touchDragging=false);stage.addEventListener('pointerdown',e=>{if(role==='glass'&&e.target.closest('#glass')){draggingGlass=true;stage.setPointerCapture(e.pointerId);moveGlass(e)}});stage.addEventListener('pointermove',e=>{if(draggingGlass)moveGlass(e)});stage.addEventListener('pointerup',()=>draggingGlass=false);stage.addEventListener('pointercancel',()=>draggingGlass=false);function moveGlass(e){const b=stage.getBoundingClientRect();glassX=Math.max(.18,Math.min(.82,(e.clientX-b.left)/b.width));render()}
+const stage=$('stage');stage.addEventListener('pointerdown',e=>{if(role!=='bottle')return;const v=visual3d;if(v){const capPoint=new THREE.Vector3(0,1.9,0);v.bottle.localToWorld(capPoint);capPoint.project(v.camera);const rect=stage.getBoundingClientRect(),px=(capPoint.x*.5+.5)*rect.width+rect.left,py=(-capPoint.y*.5+.5)*rect.height+rect.top;if(Math.hypot(e.clientX-px,e.clientY-py)<Math.max(85,rect.width*.22)){const t=performance.now();if(t-lastCapTap<550){capOpen=!capOpen;capOpenedAt=t;$('openCap').textContent=capOpen?'🍾 뚜껑 닫기':'🍾 뚜껑 열기';lastCapTap=0;touchDragging=false;return;}lastCapTap=t;}}touchDragging=true;touchStartX=e.clientX;touchStartY=e.clientY;stage.setPointerCapture(e.pointerId)});stage.addEventListener('pointermove',e=>{if(!touchDragging||role!=='bottle')return;touchRotationY+=(e.clientX-touchStartX)*.012;touchStartX=e.clientX;touchStartY=e.clientY});stage.addEventListener('pointerup',()=>touchDragging=false);stage.addEventListener('pointercancel',()=>touchDragging=false);
+// Glass phone: grab the glass to slide it (and lift it a little); drag anywhere else to tilt it. Let go and it settles back.
+let glassDrag=null;
+function glassOnScreen(b){const v=visual3d;if(!v)return null;const c=v.glassGroup.localToWorld(new THREE.Vector3(0,.95,0)),edge=v.glassGroup.localToWorld(new THREE.Vector3(1.07,.95,0));c.project(v.camera);edge.project(v.camera);return {x:(c.x*.5+.5)*b.width+b.left,y:(-c.y*.5+.5)*b.height+b.top,r:Math.abs(edge.x-c.x)*.5*b.width}}
+stage.addEventListener('pointerdown',e=>{if(role!=='glass')return;const b=stage.getBoundingClientRect(),c=glassOnScreen(b);
+ const grab=c?Math.hypot(e.clientX-c.x,e.clientY-c.y)<Math.max(70,c.r*1.4):!!e.target.closest('#glass');if(!c&&!grab)return;
+ glassDrag={mode:grab?'move':'tilt',x:e.clientX,y:e.clientY,lift:glassLift,tilt:glassTiltTarget,offset:grab?glassX-(e.clientX-b.left)/b.width:0};glassHeld=true;stage.setPointerCapture(e.pointerId)});
+stage.addEventListener('pointermove',e=>{if(!glassDrag)return;const b=stage.getBoundingClientRect();
+ if(glassDrag.mode==='move'){glassX=Math.max(.18,Math.min(.82,(e.clientX-b.left)/b.width+glassDrag.offset));render()}
+ else glassTiltTarget=Math.max(-.6,Math.min(.6,glassDrag.tilt-(e.clientX-glassDrag.x)/b.width*2.4));
+ glassLift=Math.max(0,Math.min(.1,glassDrag.lift-(e.clientY-glassDrag.y)/b.height))});
+const releaseGlass=()=>{if(!glassDrag)return;glassDrag=null;glassHeld=false;glassTiltTarget=0;glassLift=0};
+stage.addEventListener('pointerup',releaseGlass);stage.addEventListener('pointercancel',releaseGlass);
 function render(){let w=stage.clientWidth,h=stage.clientHeight;$('glass').style.left=glassX*100+'%';$('spout').style.left=spoutX*100+'%';$('spout').style.top=spoutY*100+'%';/* bottle stays visually fixed */}
 
-// Bottle interior in the bottle's (un-spun) local frame as [y, radius]; the liquid volume is computed from this.
-const INNER=[[-1.97,.6],[-1.9,.77],[.4,.77],[.66,.69],[1,.29],[1.15,.235],[1.7,.235]];
-const IN_BOTTOM=-1.97,IN_TOP=1.7,LIP_R=.235,FULL_LEVEL=1.3,GRAVITY=24;
-function innerR(y){if(y<IN_BOTTOM||y>IN_TOP)return 0;for(let i=1;i<INNER.length;i++)if(y<=INNER[i][0]){const [y0,r0]=INNER[i-1],[y1,r1]=INNER[i];return r0+(r1-r0)*(y-y0)/(y1-y0)}return LIP_R}
-const SLICES=72,SLICE_DY=(IN_TOP-IN_BOTTOM)/SLICES,SLICE_R=Array.from({length:SLICES},(_,i)=>innerR(IN_BOTTOM+(i+.5)*SLICE_DY));
+// Vessel interiors in their local frames as [y, radius]; liquid volume and level are computed from these.
+const GRAVITY=24,FULL_LEVEL=1.3;
+function makeVessel(points){
+ const bottom=points[0][0],top=points[points.length-1][0],slices=72,dy=(top-bottom)/slices;
+ const R=y=>{if(y<bottom||y>top)return 0;for(let i=1;i<points.length;i++)if(y<=points[i][0]){const [y0,r0]=points[i-1],[y1,r1]=points[i];return r0+(r1-r0)*(y-y0)/(y1-y0)}return points[points.length-1][1]};
+ return {points,bottom,top,dy,slices,R,lipR:points[points.length-1][1],sliceR:Array.from({length:slices},(_,i)=>R(bottom+(i+.5)*dy)),uR:Array.from({length:33},(_,i)=>R(bottom+i*(top-bottom)/32))};
+}
+const BOTTLE=makeVessel([[-1.97,.6],[-1.9,.77],[.4,.77],[.66,.69],[1,.29],[1.15,.235],[1.7,.235]]);
+const GLASS=makeVessel([[.14,.7],[.22,.8],[1.86,.985]]);
 // Area of the part of a circle (radius r) with x < d.
 function segArea(r,d){if(d<=-r)return 0;if(d>=r)return Math.PI*r*r;return r*r*Math.acos(-d/r)+d*Math.sqrt(r*r-d*d)}
 // Integral of segArea(r,s) for s from -r to d, so a slice's volume is exact even when the plane crosses it.
 function segInt(r,d){if(d<=-r)return 0;if(d>=r)return Math.PI*r*r*(d-r)+Math.PI*r*r*r;const t=d/r,q=1-t*t;return r*r*r*(t*Math.acos(-t)+Math.sqrt(q)-q*Math.sqrt(q)/3)}
-// Volume inside the bottle below the plane dot(p,(ux,uy,0)) = h.
-function liquidVolume(ux,uy,h){const sx=Math.abs(ux)<1e-6?(ux<0?-1e-6:1e-6):ux;let v=0;for(let i=0;i<SLICES;i++){const y0=IN_BOTTOM+i*SLICE_DY,r=SLICE_R[i],d0=(sx>0?1:-1)*(h-y0*uy)/sx,d1=(sx>0?1:-1)*(h-(y0+SLICE_DY)*uy)/sx;v+=Math.abs(d1-d0)<1e-9?segArea(r,d0):(segInt(r,d1)-segInt(r,d0))/(d1-d0)}return v*SLICE_DY}
-function solveLevel(ux,uy,vol){let lo=-2.6,hi=2.6;for(let k=0;k<26;k++){const m=(lo+hi)/2;if(liquidVolume(ux,uy,m)<vol)lo=m;else hi=m}return (lo+hi)/2}
-// Smallest bottle tilt at which this volume reaches the neck lip.
-function pourAngle(vol){const excess=a=>solveLevel(Math.sin(a),Math.cos(a),vol)-(-LIP_R*Math.sin(a)+IN_TOP*Math.cos(a));if(excess(0)>=0)return 0;let lo=0,hi=2.9;for(let k=0;k<16;k++){const m=(lo+hi)/2;if(excess(m)<0)lo=m;else hi=m}return hi}
-const V_FULL=liquidVolume(0,1,FULL_LEVEL);
-const LIQ_HEAD=`uniform vec3 uUp;uniform vec3 uSide;uniform float uH;uniform float uTime;uniform float uWave;uniform float uWave2;uniform float uRipple;uniform float uR[33];
-float waveH(vec3 p){float l=dot(p,uSide);return uWave*cos(l*4.2)+uWave2*sin(l*6.3)+uRipple*(.012*sin(l*9.-uTime*6.+p.z*3.)+.009*sin(p.z*10.+uTime*5.+l*2.)+.006*sin((l+p.z)*17.-uTime*9.));}
-float innerRadius(float y){float f=clamp((y-(${IN_BOTTOM.toFixed(3)}))/${(IN_TOP-IN_BOTTOM).toFixed(3)},0.,1.)*32.;int i=int(floor(f));return mix(uR[i],uR[min(i+1,32)],fract(f));}
+// Volume inside the vessel below the plane dot(p,(ux,uy,0)) = h.
+function liquidVolume(vs,ux,uy,h){const sx=Math.abs(ux)<1e-6?(ux<0?-1e-6:1e-6):ux,sg=sx>0?1:-1;let v=0;for(let i=0;i<vs.slices;i++){const y0=vs.bottom+i*vs.dy,r=vs.sliceR[i],d0=sg*(h-y0*uy)/sx,d1=sg*(h-(y0+vs.dy)*uy)/sx;v+=Math.abs(d1-d0)<1e-9?segArea(r,d0):(segInt(r,d1)-segInt(r,d0))/(d1-d0)}return v*vs.dy}
+function solveLevel(vs,ux,uy,vol){let lo=-2.6,hi=2.6;for(let k=0;k<26;k++){const m=(lo+hi)/2;if(liquidVolume(vs,ux,uy,m)<vol)lo=m;else hi=m}return (lo+hi)/2}
+// Smallest tilt at which this volume reaches the lip.
+function pourAngle(vs,vol){const excess=a=>solveLevel(vs,Math.sin(a),Math.cos(a),vol)-(-vs.lipR*Math.sin(a)+vs.top*Math.cos(a));if(excess(0)>=0)return 0;let lo=0,hi=2.9;for(let k=0;k<16;k++){const m=(lo+hi)/2;if(excess(m)<0)lo=m;else hi=m}return hi}
+const V_FULL=liquidVolume(BOTTLE,0,1,FULL_LEVEL);
+// A full glass stops a little short of the rim, so a tilt or a big wave spills it.
+const V_GLASS=liquidVolume(GLASS,0,1,GLASS.top)*.94;
+const LIQ_HEAD=`uniform vec3 uUp;uniform vec3 uSide;uniform float uH;uniform float uTime;uniform float uWave;uniform float uWave2;uniform float uRipple;uniform float uR[33];uniform float uBottom;uniform float uSpan;uniform vec3 uImpact;uniform float uImpactAmp;
+float waveH(vec3 p){float l=dot(p,uSide);vec3 q=p-uImpact;q-=uUp*dot(q,uUp);float d=length(q);
+return uWave*cos(l*4.2)+uWave2*sin(l*6.3)+uRipple*(.012*sin(l*9.-uTime*6.+p.z*3.)+.009*sin(p.z*10.+uTime*5.+l*2.)+.006*sin((l+p.z)*17.-uTime*9.))
+ +uImpactAmp*(.035*sin(d*20.-uTime*15.)*exp(-d*2.2)-.06*exp(-d*d*60.));}
+float innerRadius(float y){float f=clamp((y-uBottom)/uSpan,0.,1.)*32.;int i=int(floor(f));return mix(uR[i],uR[min(i+1,32)],fract(f));}
 varying vec3 vP;varying vec3 vN;varying vec3 vV;
 `;
 const LIQ_BODY_VERT=`varying vec3 vP;varying vec3 vN;varying vec3 vV;
@@ -65,15 +85,55 @@ const LIQ_BODY_FRAG=LIQ_HEAD+`void main(){float depth=uH+waveH(vP)-dot(vP,uUp);i
 vec3 n=normalize(gl_FrontFacing?vN:-vN),v=normalize(vV);float fr=pow(1.-abs(dot(n,v)),2.5),d=clamp(depth*.55,0.,1.);
 vec3 col=mix(vec3(.66,.95,.88),vec3(.33,.74,.66),d);float a=.22+.28*fr+.14*d,men=smoothstep(.05,0.,depth);
 col=mix(col,vec3(.94,1.,.98),men*.85);a=max(a,men*.8);gl_FragColor=vec4(col+fr*.22,a);}`;
-// A grid laid on the surface plane, displaced by the waves and trimmed to the bottle's inner wall.
+// A grid laid on the surface plane, displaced by the waves and trimmed to the vessel's inner wall.
 const LIQ_SURF_VERT=LIQ_HEAD+`vec3 surfP(vec2 g){vec3 p=uSide*g.x+vec3(0.,0.,g.y)+uUp*uH;return p+uUp*waveH(p);}
 void main(){vec2 g=position.xy;vec3 p=surfP(g);vec3 n=normalize(cross(surfP(g+vec2(0.,.02))-p,surfP(g+vec2(.02,0.))-p));
 vP=p;vN=normalize(normalMatrix*n);vec4 mv=modelViewMatrix*vec4(p,1.);vV=-mv.xyz;gl_Position=projectionMatrix*mv;}`;
-const LIQ_SURF_FRAG=LIQ_HEAD+`void main(){float edge=innerRadius(vP.y)-length(vP.xz);if(vP.y<${IN_BOTTOM.toFixed(3)}||vP.y>${IN_TOP.toFixed(3)}||edge<0.)discard;
+const LIQ_SURF_FRAG=LIQ_HEAD+`void main(){float edge=innerRadius(vP.y)-length(vP.xz);if(vP.y<uBottom||vP.y>uBottom+uSpan||edge<0.)discard;
 vec3 n=normalize(gl_FrontFacing?vN:-vN),v=normalize(vV),l=normalize(vec3(-.35,.75,.55));
 float spec=pow(max(dot(n,normalize(l+v)),0.),70.),fr=pow(1.-abs(dot(n,v)),3.);
 vec3 col=vec3(.8,.98,.94)*(.7+.3*max(dot(n,l),0.))+spec+fr*.2;float a=max(.42+.3*fr+spec*.5,smoothstep(.04,0.,edge)*.85);
 gl_FragColor=vec4(col,a);}`;
+function makeLiquid(vs,planeW,planeH,parent){
+ const U={uUp:{value:new THREE.Vector3(0,1,0)},uSide:{value:new THREE.Vector3(1,0,0)},uH:{value:vs.bottom},uTime:{value:0},uWave:{value:0},uWave2:{value:0},uRipple:{value:.25},uR:{value:vs.uR},uBottom:{value:vs.bottom},uSpan:{value:vs.top-vs.bottom},uImpact:{value:new THREE.Vector3()},uImpactAmp:{value:0}};
+ const points=[new THREE.Vector2(0,vs.bottom),...vs.points.map(([y,r])=>new THREE.Vector2(r,y)),new THREE.Vector2(0,vs.top)];
+ const body=new THREE.Mesh(new THREE.LatheGeometry(points,48),new THREE.ShaderMaterial({uniforms:U,vertexShader:LIQ_BODY_VERT,fragmentShader:LIQ_BODY_FRAG,transparent:true,depthWrite:false,side:THREE.DoubleSide}));body.renderOrder=1;
+ const surface=new THREE.Mesh(new THREE.PlaneGeometry(planeW,planeH,Math.round(planeW*26),Math.round(planeH*26)),new THREE.ShaderMaterial({uniforms:U,vertexShader:LIQ_SURF_VERT,fragmentShader:LIQ_SURF_FRAG,transparent:true,depthWrite:false,side:THREE.DoubleSide}));surface.frustumCulled=false;surface.renderOrder=2;
+ parent.add(body,surface);return {U,body,surface};
+}
+// Damped spring: the surface lags the vessel's tilt, overshoots and settles (first slosh mode); agitation feeds the waves.
+function stepSlosh(s,target,dt,freq,zeta,boost){const w=2*Math.PI*freq;for(let k=0;k<2;k++){const sub=dt/2;s.vel+=(w*w*(target-s.angle)-2*zeta*w*s.vel)*sub;s.angle+=s.vel*sub}s.agit=Math.max(Math.min(1,Math.abs(s.vel)*.22+Math.abs(target-s.angle)*.9+boost),s.agit*Math.exp(-dt*1.2))}
+function setLiquid(L,s,level,time,wave){const ux=Math.sin(s.angle),uy=Math.cos(s.angle),U=L.U;U.uUp.value.set(ux,uy,0);U.uSide.value.set(uy,-ux,0);U.uH.value=level;U.uTime.value=time;U.uWave.value=wave*s.agit*Math.sin(time*13.8);U.uWave2.value=wave*.55*s.agit*Math.sin(time*21.4+1);U.uRipple.value=.25+1.5*s.agit}
+// The pour stream is a ballistic arc from a launch point; its leading and trailing ends move so it can start and break off.
+function arcAt(v,t,P,V){V.copy(v.sV0).addScaledVector(v.sG,t);P.copy(v.sLip).addScaledVector(v.sV0,t).addScaledVector(v.sG,.5*t*t)}
+function stepStream(v,on,lip,v0,g,dt){let stopped=false;if(on){if(!v.streamWas){v.sFront=0;v.sTail=0}v.sLip.copy(lip);v.sV0.copy(v0);v.sG.copy(g);v.sFront=Math.min(1.2,v.sFront+dt)}else if(v.streamWas||v.sTail<v.sFront){stopped=v.streamWas;v.sFront+=dt;v.sTail+=dt*1.15}v.streamWas=on;return stopped}
+// Rewrites the stream tube in place, cut off at tEnd where it lands.
+function drawStream(v,tEnd,time,baseR){
+ const mesh=v.pourStream,t0=v.sTail,t1=Math.min(v.sFront,tEnd,1.2);mesh.visible=t1-t0>.005;if(!mesh.visible)return;
+ const {SEG,AROUND,streamPos:pos,streamNorm:nor,tmp}=v,P=tmp.P,V=tmp.V,v0len=v.sV0.length(),freeFront=v.sFront<tEnd;
+ for(let j=0;j<=SEG;j++){
+  const t=t0+(t1-t0)*j/SEG;arcAt(v,t,P,V);
+  const sp=V.length()||1,nx=V.y/sp,ny=-V.x/sp;
+  // Thins as it speeds up (continuity), wobbles, and tapers where it starts or breaks off.
+  let r=baseR*Math.sqrt(v0len/sp)*(1+.12*Math.sin(t*40-time*18)+.06*Math.sin(t*90-time*31));
+  if(freeFront)r*=Math.min(1,(SEG-j)/5+.2);if(t0>0)r*=Math.min(1,j/5+.2);
+  for(let k=0;k<AROUND;k++){const a=k/AROUND*Math.PI*2,c=Math.cos(a),s=Math.sin(a),o=(j*AROUND+k)*3;
+   nor[o]=nx*c;nor[o+1]=ny*c;nor[o+2]=s;pos[o]=P.x+nx*c*r;pos[o+1]=P.y+ny*c*r;pos[o+2]=P.z+s*r}
+ }
+ mesh.geometry.attributes.position.needsUpdate=true;mesh.geometry.attributes.normal.needsUpdate=true;
+}
+function spawnDrop(v,p,vel,size){const d=v.dropState[v.dropCursor];v.dropCursor=(v.dropCursor+1)%v.dropState.length;d.p.copy(p);d.v.copy(vel);d.life=2.5;d.size=size}
+function jitter(v,a){return v.tmp.J.set((Math.random()-.5)*2*a,(Math.random()-.5)*2*a,(Math.random()-.5)*a)}
+// Moves free droplets under gravity; land(d) returns true when a drop is absorbed (into liquid, onto the floor).
+function stepDrops(v,dt,g,halfW,halfH,land){
+ const {M,Q,S,D,Y}=v.tmp,inst=v.dropInst;
+ for(let i=0;i<v.dropState.length;i++){const d=v.dropState[i];
+  if(d.life>0){d.v.addScaledVector(g,dt);d.p.addScaledVector(d.v,dt);d.life-=dt;if(Math.abs(d.p.x)>halfW+1||Math.abs(d.p.y)>halfH+1||(land&&land(d)))d.life=0}
+  if(d.life<=0){inst.setMatrixAt(i,v.hiddenMatrix);continue}
+  const sp=d.v.length();D.copy(d.v).divideScalar(sp||1);Q.setFromUnitVectors(Y,D);S.set(d.size,d.size*(1+Math.min(2.5,sp*.12)),d.size);M.compose(d.p,Q,S);inst.setMatrixAt(i,M);
+ }
+ inst.instanceMatrix.needsUpdate=true;
+}
 
 function init3D(){
  if(visual3d)return;
@@ -86,7 +146,6 @@ function init3D(){
  const rim=new THREE.PointLight(0x80ffe4,65);rim.position.set(3,1,2);scene.add(rim);
  const green=new THREE.MeshPhysicalMaterial({color:0x167a59,metalness:0,roughness:.12,transparent:true,opacity:.43,side:THREE.DoubleSide,depthWrite:false,clearcoat:1,clearcoatRoughness:.09});
  const capMat=new THREE.MeshStandardMaterial({color:0xe2e9d7,metalness:.35,roughness:.27});
- const labelMat=new THREE.MeshStandardMaterial({color:0xeaf6d9,roughness:.6});
  const textCanvas=document.createElement('canvas');textCanvas.width=512;textCanvas.height=256;
  const ctx=textCanvas.getContext('2d');ctx.fillStyle='#eaf6d9';ctx.fillRect(0,0,512,256);ctx.fillStyle='#19533e';ctx.textAlign='center';ctx.font='bold 110px system-ui';ctx.fillText('소주',256,144);ctx.font='bold 38px system-ui';ctx.fillText('SOJU',256,207);
  const labelTexture=new THREE.CanvasTexture(textCanvas);labelTexture.colorSpace=THREE.SRGBColorSpace;
@@ -97,48 +156,47 @@ function init3D(){
  const capPivot=new THREE.Group();capPivot.position.set(0,1.72,0);bottle.add(capPivot);const cap=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.35,40),capMat);cap.position.y=.18;capPivot.add(cap);
  const label=new THREE.Mesh(new THREE.CylinderGeometry(.844,.844,1.1,48,1,true,Math.PI*.12,Math.PI*.76),new THREE.MeshStandardMaterial({map:labelTexture,side:THREE.DoubleSide,roughness:.65}));label.position.y=-.55;bottle.add(label);
  const bottleGlow=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.025,48),new THREE.MeshBasicMaterial({color:0xb2ffe4,transparent:true,opacity:.32}));bottleGlow.position.y=-2.02;bottle.add(bottleGlow);
- const liqU={uUp:{value:new THREE.Vector3(0,1,0)},uSide:{value:new THREE.Vector3(1,0,0)},uH:{value:FULL_LEVEL},uTime:{value:0},uWave:{value:0},uWave2:{value:0},uRipple:{value:.25},uR:{value:Array.from({length:33},(_,i)=>innerR(IN_BOTTOM+i*(IN_TOP-IN_BOTTOM)/32))}};
- const innerPoints=[new THREE.Vector2(0,IN_BOTTOM),...INNER.map(([y,r])=>new THREE.Vector2(r,y)),new THREE.Vector2(0,IN_TOP)];
- const bottleLiquid=new THREE.Mesh(new THREE.LatheGeometry(innerPoints,48),new THREE.ShaderMaterial({uniforms:liqU,vertexShader:LIQ_BODY_VERT,fragmentShader:LIQ_BODY_FRAG,transparent:true,depthWrite:false,side:THREE.DoubleSide}));bottleLiquid.renderOrder=1;bottlePivot.add(bottleLiquid);
- const bottleSurface=new THREE.Mesh(new THREE.PlaneGeometry(4.6,1.7,120,40),new THREE.ShaderMaterial({uniforms:liqU,vertexShader:LIQ_SURF_VERT,fragmentShader:LIQ_SURF_FRAG,transparent:true,depthWrite:false,side:THREE.DoubleSide}));bottleSurface.frustumCulled=false;bottleSurface.renderOrder=2;bottlePivot.add(bottleSurface);
+ const bLiq=makeLiquid(BOTTLE,4.6,1.7,bottlePivot);
  scene.add(bottlePivot);
- // Pour stream from the lip: a tube along a ballistic arc, rewritten in place each frame.
+ const glassGroup=new THREE.Group(),glassMat=new THREE.MeshPhysicalMaterial({color:0xe3fffa,metalness:0,roughness:.08,transparent:true,opacity:.32,side:THREE.DoubleSide,depthWrite:false,clearcoat:1});
+ const glassProfile=[[0,0],[.8,0],[.88,.15],[1.04,1.85],[1.07,1.9]];
+ const vessel=new THREE.Mesh(new THREE.LatheGeometry(glassProfile.map(p=>new THREE.Vector2(p[0],p[1])),64),glassMat);vessel.renderOrder=3;glassGroup.add(vessel);
+ const rimMesh=new THREE.Mesh(new THREE.TorusGeometry(1.07,.045,12,64),new THREE.MeshStandardMaterial({color:0xe8fffc,metalness:.12,roughness:.12,transparent:true,opacity:.8}));rimMesh.rotation.x=Math.PI/2;rimMesh.position.y=1.9;rimMesh.renderOrder=3;glassGroup.add(rimMesh);
+ const gLiq=makeLiquid(GLASS,2.4,2.4,glassGroup);
+ // Bubbles pushed under by the stream, rising back to the surface (glass-local).
+ const hiddenMatrix=new THREE.Matrix4().makeScale(0,0,0);
+ const BUB_N=48,bubbleInst=new THREE.InstancedMesh(new THREE.SphereGeometry(1,8,6),new THREE.MeshBasicMaterial({color:0xf2ffff,transparent:true,opacity:.5,depthWrite:false}),BUB_N);
+ bubbleInst.frustumCulled=false;bubbleInst.renderOrder=2;bubbleInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);for(let i=0;i<BUB_N;i++)bubbleInst.setMatrixAt(i,hiddenMatrix);glassGroup.add(bubbleInst);
+ const bubbleState=Array.from({length:BUB_N},()=>({p:new THREE.Vector3(),speed:0,size:0,life:0,phase:0}));
+ scene.add(glassGroup);
+ // Spilled soju collecting on the table under the glass.
+ const puddle=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshPhysicalMaterial({color:0xbff6ee,roughness:.05,metalness:0,transparent:true,opacity:.42,depthWrite:false,clearcoat:1}));puddle.rotation.x=-Math.PI/2;puddle.visible=false;scene.add(puddle);
+ // Pour stream (from the bottle's lip, or into the glass from the top edge): a tube rewritten in place each frame.
  const SEG=44,AROUND=10,streamPos=new Float32Array((SEG+1)*AROUND*3),streamNorm=new Float32Array(streamPos.length),streamIdx=[];
  for(let j=0;j<SEG;j++)for(let k=0;k<AROUND;k++){const n=j*AROUND+k,m=j*AROUND+(k+1)%AROUND;streamIdx.push(n,m,n+AROUND,m,m+AROUND,n+AROUND)}
  const pourGeo=new THREE.BufferGeometry();pourGeo.setAttribute('position',new THREE.BufferAttribute(streamPos,3).setUsage(THREE.DynamicDrawUsage));pourGeo.setAttribute('normal',new THREE.BufferAttribute(streamNorm,3).setUsage(THREE.DynamicDrawUsage));pourGeo.setIndex(streamIdx);
  const pourStream=new THREE.Mesh(pourGeo,new THREE.MeshStandardMaterial({color:0xbdf9ff,emissive:0x1d5560,roughness:.06,metalness:.1,transparent:true,opacity:.72,depthWrite:false}));pourStream.frustumCulled=false;pourStream.visible=false;scene.add(pourStream);
- // Free droplets (spills, spray off the stream, drips after pouring) as one instanced mesh.
- const DROP_N=220,dropInst=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xd2ffff,emissive:0x1d5560,roughness:.05,metalness:.1,transparent:true,opacity:.85,depthWrite:false}),DROP_N);
- dropInst.frustumCulled=false;dropInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);const hiddenMatrix=new THREE.Matrix4().makeScale(0,0,0);for(let i=0;i<DROP_N;i++)dropInst.setMatrixAt(i,hiddenMatrix);scene.add(dropInst);
+ // Free droplets (spills, spray, splashes, drips) as one instanced mesh.
+ const DROP_N=260,dropInst=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xd2ffff,emissive:0x1d5560,roughness:.05,metalness:.1,transparent:true,opacity:.85,depthWrite:false}),DROP_N);
+ dropInst.frustumCulled=false;dropInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);for(let i=0;i<DROP_N;i++)dropInst.setMatrixAt(i,hiddenMatrix);scene.add(dropInst);
  const dropState=Array.from({length:DROP_N},()=>({p:new THREE.Vector3(),v:new THREE.Vector3(),life:0,size:0}));
- const glassGroup=new THREE.Group(),glassMat=new THREE.MeshPhysicalMaterial({color:0xe3fffa,metalness:0,roughness:.08,transparent:true,opacity:.32,side:THREE.DoubleSide,depthWrite:false,clearcoat:1});
- const glassProfile=[[0,0],[.8,0],[.88,.15],[1.04,1.85],[1.07,1.9]];
- const vessel=new THREE.Mesh(new THREE.LatheGeometry(glassProfile.map(p=>new THREE.Vector2(p[0],p[1])),64),glassMat);glassGroup.add(vessel);
- const rimMesh=new THREE.Mesh(new THREE.TorusGeometry(1.07,.045,12,64),new THREE.MeshStandardMaterial({color:0xe8fffc,metalness:.12,roughness:.12,transparent:true,opacity:.8}));rimMesh.rotation.x=Math.PI/2;rimMesh.position.y=1.9;glassGroup.add(rimMesh);
- const liquidMat=new THREE.MeshPhysicalMaterial({color:0xb5f7e8,roughness:.12,metalness:0,transparent:true,opacity:.67,side:THREE.DoubleSide,depthWrite:false});
- const liquid=new THREE.Mesh(new THREE.CylinderGeometry(.97,.78,1,48),liquidMat);glassGroup.add(liquid);
- const surface=new THREE.Mesh(new THREE.CircleGeometry(.97,48),new THREE.MeshBasicMaterial({color:0xe5ffff,transparent:true,opacity:.7,side:THREE.DoubleSide}));surface.rotation.x=-Math.PI/2;glassGroup.add(surface);
- scene.add(glassGroup);
- const dropMat=new THREE.MeshPhysicalMaterial({color:0xc7ffff,roughness:.08,metalness:0,transparent:true,opacity:.85});
- const drops3d=Array.from({length:42},()=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.052,8,8),dropMat);m.scale.set(.7,1.8,.7);scene.add(m);return m});
- const streamMat=new THREE.MeshBasicMaterial({color:0xb4f8ff,transparent:true,opacity:.58,depthWrite:false});
- const stream=new THREE.Mesh(new THREE.BufferGeometry(),streamMat);scene.add(stream);const splashMat=new THREE.MeshBasicMaterial({color:0xdfffff,transparent:true,opacity:.7,depthWrite:false});const splashes=Array.from({length:16},()=>{const p=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),splashMat);scene.add(p);return p});
- visual3d={renderer,scene,camera,bottlePivot,bottle,capPivot,liqU,glassGroup,liquid,surface,drops3d,stream,splashes,pourStream,streamPos,streamNorm,SEG,AROUND,dropInst,dropState,hiddenMatrix,
-  slosh:0,sloshVel:0,agit:0,extra:0,cacheVol:-1,reqAngle:0,lastNow:0,streamWas:false,sFront:0,sTail:0,sLip:new THREE.Vector3(),sV0:new THREE.Vector3(),sG:new THREE.Vector3(),dribble:0,dropCursor:0,spawnAcc:0,
-  tmp:{g:new THREE.Vector3(),lip:new THREE.Vector3(),axis:new THREE.Vector3(),side:new THREE.Vector3(),v0:new THREE.Vector3(),P:new THREE.Vector3(),V:new THREE.Vector3(),J:new THREE.Vector3(),D:new THREE.Vector3(),S:new THREE.Vector3(),Y:new THREE.Vector3(0,1,0),Q:new THREE.Quaternion(),M:new THREE.Matrix4()}};
+ visual3d={renderer,scene,camera,bottlePivot,bottle,capPivot,bLiq,glassGroup,gLiq,bubbleInst,bubbleState,puddle,pourStream,streamPos,streamNorm,SEG,AROUND,dropInst,dropState,hiddenMatrix,
+  bs:{angle:0,vel:0,agit:0},gs:{angle:0,vel:0,agit:0},extra:0,cacheVol:-1,reqAngle:0,lastNow:0,streamWas:false,sFront:0,sTail:0,sLip:new THREE.Vector3(),sV0:new THREE.Vector3(),sG:new THREE.Vector3(),dribble:0,dropCursor:0,spawnAcc:0,
+  gx:0,gy:null,gyVel:0,gTilt:0,gTiltVel:0,gvx:0,gvy:0,gax:0,gay:0,gVol:0,impAmp:0,streamHit:false,splashAcc:0,bubbleAcc:0,bubbleCursor:0,overAcc:0,spillPending:0,spillInFlight:0,lastSpillSend:0,puddleVol:0,puddleX:0,
+  tmp:{g:new THREE.Vector3(),lip:new THREE.Vector3(),axis:new THREE.Vector3(),side:new THREE.Vector3(),v0:new THREE.Vector3(),P:new THREE.Vector3(),V:new THREE.Vector3(),J:new THREE.Vector3(),D:new THREE.Vector3(),S:new THREE.Vector3(),L:new THREE.Vector3(),Y:new THREE.Vector3(0,1,0),Q:new THREE.Quaternion(),M:new THREE.Matrix4()}};
  $('stage').classList.add('webgl');canvas.classList.remove('hidden');
  const resize=()=>{const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};
  new ResizeObserver(resize).observe(stage);resize();
  }catch(e){console.warn('3D fallback:',e);visual3d=null;$('threeCanvas').classList.add('hidden');$('stage').classList.remove('webgl')}
 }
-function animate3D(now,active,aim){
+function animate3D(now,active){
  const v=visual3d;if(!v)return;
- const {renderer,scene,camera,bottlePivot,bottle,capPivot,liqU,glassGroup,liquid,surface,drops3d,stream,splashes,pourStream,dropInst,dropState,tmp}=v;
+ const {renderer,scene,camera,bottlePivot,bottle,capPivot,glassGroup,gLiq,bubbleInst,puddle,tmp}=v;
  const h=stage.clientHeight,w=stage.clientWidth;
  bottlePivot.visible=role==='bottle';glassGroup.visible=role==='glass';
- const time=now*.001;
+ const time=now*.001,dt=Math.min(.05,Math.max(0,(now-(v.lastNow||now))/1000));v.lastNow=now;
+ const viewH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z,halfH=viewH/2,halfW=halfH*w/h;
  if(role==='bottle'){
-  const dt=Math.min(.05,Math.max(0,(now-(v.lastNow||now))/1000));v.lastNow=now;
   const openAmount=capOpen?1:0;
   capPivot.rotation.z=THREE.MathUtils.lerp(capPivot.rotation.z,openAmount*-.65,.09);
   const popTime=Math.max(0,(now-capOpenedAt)/1000);const popBounce=capOpen&&popTime<.8?Math.sin(Math.min(1,popTime/.8)*Math.PI)*.42:0;capPivot.position.y=THREE.MathUtils.lerp(capPivot.position.y,1.72+openAmount*.9+popBounce,.17);
@@ -148,123 +206,115 @@ function animate3D(now,active,aim){
   const phone=THREE.MathUtils.degToRad(THREE.MathUtils.clamp(signedTilt*sensorSign*glassSide,-170,170));
   // Full at the neck, emptying as the glass fills.
   const vol=V_FULL*Math.max(.03,1-amount/100);
-  if(Math.abs(vol-v.cacheVol)>1e-4){v.cacheVol=vol;v.reqAngle=pourAngle(vol)}
+  if(Math.abs(vol-v.cacheVol)>1e-4){v.cacheVol=vol;v.reqAngle=pourAngle(BOTTLE,vol)}
   // While pouring, tip the drawn bottle further until the liquid actually reaches the lip.
   const extraTarget=active?Math.max(0,v.reqAngle+.18-phone):0;
   v.extra+=(extraTarget-v.extra)*Math.min(1,dt*(active?2.6:3.5));
   const e=v.extra,se=Math.sin(Math.min(e,Math.PI/2));
   bottlePivot.position.set(0,-.15+.4*se,0);bottlePivot.rotation.set(0,0,e);bottlePivot.scale.setScalar(1-.35*se);
   bottle.position.set(0,0,0);bottle.rotation.set(0,touchRotationY,0);
-  // Damped spring: the surface lags the bottle's tilt, overshoots and settles (first slosh mode).
-  const target=phone+e,omega=2*Math.PI*1.4,zeta=.075;
-  for(let s=0;s<2;s++){const sub=dt/2;v.sloshVel+=(omega*omega*(target-v.slosh)-2*zeta*omega*v.sloshVel)*sub;v.slosh+=v.sloshVel*sub}
-  v.agit=Math.max(Math.min(1,Math.abs(v.sloshVel)*.22+Math.abs(target-v.slosh)*.9+(active?.35:0)),v.agit*Math.exp(-dt*1.2));
-  const ux=Math.sin(v.slosh),uy=Math.cos(v.slosh),level=solveLevel(ux,uy,vol);
-  liqU.uUp.value.set(ux,uy,0);liqU.uSide.value.set(uy,-ux,0);liqU.uH.value=level;liqU.uTime.value=time;
-  liqU.uWave.value=.055*v.agit*Math.sin(time*13.8);liqU.uWave2.value=.03*v.agit*Math.sin(time*21.4+1);liqU.uRipple.value=.25+1.5*v.agit;
+  const bs=v.bs;stepSlosh(bs,phone+e,dt,1.4,.075,active?.35:0);
+  const ux=Math.sin(bs.angle),uy=Math.cos(bs.angle),level=solveLevel(BOTTLE,ux,uy,vol);
+  setLiquid(v.bLiq,bs,level,time,.055);
   // Spilling: liquid above the downhill side of the lip leaves the bottle once the cap is clear.
   bottlePivot.updateMatrixWorld();
-  const lipSide=ux>=0?-1:1,lipX=lipSide*LIP_R;
-  const excess=level+.03*v.agit-(lipX*ux+IN_TOP*uy);
+  const lipSide=ux>=0?-1:1,lipX=lipSide*BOTTLE.lipR;
+  const excess=level+.03*bs.agit-(lipX*ux+BOTTLE.top*uy);
   const flowing=capOpen&&capPivot.position.y>2.25&&excess>0;
-  const viewH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z,halfH=viewH/2,halfW=halfH*w/h;
   const g=tmp.g.set(-Math.sin(phone),-Math.cos(phone),0).multiplyScalar(GRAVITY);
-  const lipW=tmp.lip.set(lipX,IN_TOP,0).applyMatrix4(bottlePivot.matrixWorld);
+  const lipW=tmp.lip.set(lipX,BOTTLE.top,0).applyMatrix4(bottlePivot.matrixWorld);
   tmp.axis.set(-Math.sin(e),Math.cos(e),0);tmp.side.set(lipSide*Math.cos(e),lipSide*Math.sin(e),0);
   const v0=tmp.v0.copy(tmp.axis).addScaledVector(tmp.side,.7).normalize().multiplyScalar(1.1+5*Math.sqrt(Math.max(0,excess)));
   const streamOn=flowing&&active;
-  if(streamOn){if(!v.streamWas){v.sFront=0;v.sTail=0}v.sLip.copy(lipW);v.sV0.copy(v0);v.sG.copy(g);v.sFront=Math.min(1.2,v.sFront+dt)}
-  else if(v.streamWas||v.sTail<v.sFront){if(v.streamWas)v.dribble=.8;v.sFront+=dt;v.sTail+=dt*1.15}
-  v.streamWas=streamOn;
-  const arcAt=(t,P,V)=>{V.copy(v.sV0).addScaledVector(v.sG,t);P.copy(v.sLip).addScaledVector(v.sV0,t).addScaledVector(v.sG,.5*t*t)};
-  pourStream.visible=v.sFront-v.sTail>.005&&v.sTail<1.2;
-  if(pourStream.visible){
-   const {SEG,AROUND,streamPos:pos,streamNorm:nor}=v,P=tmp.P,V=tmp.V,t0=v.sTail,t1=Math.min(v.sFront,1.2),v0len=v.sV0.length();
-   for(let j=0;j<=SEG;j++){
-    const t=t0+(t1-t0)*j/SEG;arcAt(t,P,V);
-    const sp=V.length()||1,nx=V.y/sp,ny=-V.x/sp;
-    // Thins as it speeds up (continuity), wobbles, and tapers where it starts or breaks off.
-    let r=.062*Math.sqrt(v0len/sp)*(1+.12*Math.sin(t*40-time*18)+.06*Math.sin(t*90-time*31));
-    r*=Math.min(1,(SEG-j)/5+.2);if(t0>0)r*=Math.min(1,j/5+.2);
-    for(let k=0;k<AROUND;k++){const a=k/AROUND*Math.PI*2,c=Math.cos(a),s=Math.sin(a),o=(j*AROUND+k)*3;
-     nor[o]=nx*c;nor[o+1]=ny*c;nor[o+2]=s;pos[o]=P.x+nx*c*r;pos[o+1]=P.y+ny*c*r;pos[o+2]=P.z+s*r}
-   }
-   pourStream.geometry.attributes.position.needsUpdate=true;pourStream.geometry.attributes.normal.needsUpdate=true;
-  }
+  if(stepStream(v,streamOn,lipW,v0,g,dt))v.dribble=.8;
+  drawStream(v,1.2,time,.062);
   // Droplets: spray off the stream, spills from sloshing, and the last drips after a pour.
-  const spawn=(p,vel,size)=>{const d=dropState[v.dropCursor];v.dropCursor=(v.dropCursor+1)%dropState.length;d.p.copy(p);d.v.copy(vel);d.life=2.5;d.size=size};
-  const jitter=(a)=>tmp.J.set((Math.random()-.5)*2*a,(Math.random()-.5)*2*a,(Math.random()-.5)*a);
   const rate=streamOn?42:flowing?10+60*Math.min(1,excess*6):v.dribble>0&&capOpen?12:0;
   v.dribble=Math.max(0,v.dribble-dt);v.spawnAcc+=rate*dt;
   while(v.spawnAcc>=1){v.spawnAcc-=1;
-   if(streamOn&&Math.random()<.7){arcAt(v.sFront*(.3+.7*Math.random()),tmp.P,tmp.V);tmp.P.add(jitter(.05));tmp.V.multiplyScalar(.9+.2*Math.random()).add(jitter(.7));spawn(tmp.P,tmp.V,.018+.03*Math.random())}
-   else{tmp.P.copy(lipW).add(jitter(.04));tmp.V.copy(v0).multiplyScalar(flowing?.75:.2).add(jitter(.35));spawn(tmp.P,tmp.V,.025+.035*Math.random())}
+   if(streamOn&&Math.random()<.7){arcAt(v,v.sFront*(.3+.7*Math.random()),tmp.P,tmp.V);tmp.P.add(jitter(v,.05));tmp.V.multiplyScalar(.9+.2*Math.random()).add(jitter(v,.7));spawnDrop(v,tmp.P,tmp.V,.018+.03*Math.random())}
+   else{tmp.P.copy(lipW).add(jitter(v,.04));tmp.V.copy(v0).multiplyScalar(flowing?.75:.2).add(jitter(v,.35));spawnDrop(v,tmp.P,tmp.V,.025+.035*Math.random())}
   }
-  const {M,Q,S,D,Y}=tmp;
-  for(let i=0;i<dropState.length;i++){const d=dropState[i];
-   if(d.life>0){d.v.addScaledVector(g,dt);d.p.addScaledVector(d.v,dt);d.life-=dt;if(Math.abs(d.p.x)>halfW+1||Math.abs(d.p.y)>halfH+1)d.life=0}
-   if(d.life<=0){dropInst.setMatrixAt(i,v.hiddenMatrix);continue}
-   const sp=d.v.length();D.copy(d.v).divideScalar(sp||1);Q.setFromUnitVectors(Y,D);S.set(d.size,d.size*(1+Math.min(2.5,sp*.12)),d.size);M.compose(d.p,Q,S);dropInst.setMatrixAt(i,M);
-  }
-  dropInst.instanceMatrix.needsUpdate=true;
+  stepDrops(v,dt,g,halfW,halfH,null);
  }else{
-  const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
-  glassGroup.position.set((glassX-.5)*visibleH*(w/h),-visibleH*.28,0);
-  const level=Math.max(.012,Math.min(1,amount/100))*1.72;
-  liquid.scale.y=level;liquid.position.y=level/2+.08;
-  surface.position.y=level+.08;
- }
- // The bottle draws its own stream and droplets above; this simpler one is the glass phone's.
- const pouring=role==='glass'&&!!latest?.pouring;
- const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
- const x=role==='glass'?(aim-.5)*visibleH*(w/h):0;
- const top=role==='glass'?visibleH*.54:1.98;
- const bottom=role==='glass'?glassGroup.position.y+1.7:-.3;
- const length=Math.max(.4,top-bottom);
- const speed=3.6,phase=time*speed;
- // A tapered, gently wandering stream whose surface ripples downwards.
- stream.visible=pouring;
- if(pouring){
-  const count=48,around=8,vertices=[],normals=[],indices=[];
-  for(let j=0;j<=count;j++){
-   const t=j/count,y=top-length*t;
-   const centerX=x+(role==='bottle'?.2*t*t:0)+Math.sin(t*16-phase*2)*(.014+.02*t);
-   const centerZ=.4+Math.cos(t*13-phase*1.7)*.014;
-   const radius=(.046-.024*t)*(1+.14*Math.sin(t*55-phase*10));
-   for(let k=0;k<around;k++){
-    const a=k*Math.PI*2/around;
-    vertices.push(centerX+Math.cos(a)*radius,y,centerZ+Math.sin(a)*radius);
-    normals.push(Math.cos(a),0,Math.sin(a));
-    if(j<count){const n=j*around+k,next=j*around+(k+1)%around;indices.push(n,next,n+around,next,next+around,n+around)}
-   }
+  const floorY=-viewH*.28;
+  // The hand-held glass: x from the calibration drag, a small lift and a tilt, both springing back when let go.
+  const tx=(glassX-.5)*viewH*(w/h),ty=floorY+glassLift*viewH;
+  if(v.gy==null){v.gx=tx;v.gy=ty;v.puddleX=tx}
+  const px=v.gx,py=v.gy;
+  v.gx+=(tx-v.gx)*Math.min(1,dt*16);
+  const wy=2*Math.PI*(glassHeld?4:2.6),zy=glassHeld?.9:.32;v.gyVel+=(wy*wy*(ty-v.gy)-2*zy*wy*v.gyVel)*dt;v.gy+=v.gyVel*dt;
+  if(v.gy<floorY){v.gy=floorY;if(v.gyVel<0)v.gyVel*=-.25}
+  const wt=2*Math.PI*(glassHeld?3.5:2.2),zt=glassHeld?.85:.35;v.gTiltVel+=(wt*wt*(glassTiltTarget-v.gTilt)-2*zt*wt*v.gTiltVel)*dt;v.gTilt+=v.gTiltVel*dt;
+  // The glass's own acceleration tips the liquid's effective gravity (inertia), and a hard set-down jolts it.
+  if(dt>0){const vx=(v.gx-px)/dt,vy=(v.gy-py)/dt,k=Math.min(1,dt*12);v.gax+=(THREE.MathUtils.clamp((vx-v.gvx)/dt,-80,80)-v.gax)*k;v.gay+=(THREE.MathUtils.clamp((vy-v.gvy)/dt,-80,80)-v.gay)*k;v.gvx=vx;v.gvy=vy}
+  glassGroup.position.set(v.gx,v.gy,0);glassGroup.rotation.set(0,0,v.gTilt);glassGroup.updateMatrixWorld();
+  const targetVol=V_GLASS*THREE.MathUtils.clamp((amount-v.spillPending-v.spillInFlight)/100,0,1);
+  v.gVol+=(targetVol-v.gVol)*Math.min(1,dt*6);
+  const gs=v.gs;stepSlosh(gs,v.gTilt+Math.atan2(v.gax,Math.max(4,GRAVITY+v.gay)),dt,1.8,.09,v.impAmp*.3+Math.min(.5,Math.abs(v.gay)*.012));
+  const ux=Math.sin(gs.angle),uy=Math.cos(gs.angle),level=solveLevel(GLASS,ux,uy,Math.max(v.gVol,1e-4));
+  gLiq.body.visible=gLiq.surface.visible=v.gVol>.004;
+  setLiquid(gLiq,gs,level,time,.045);
+  // Incoming stream from the top edge; it ends on the liquid surface if it falls inside the glass, else on the table.
+  const sx=((latest?.aim??.5)-.5)*viewH*(w/h),y0=halfH+.3,fall=3.5;
+  const c=Math.cos(v.gTilt),s=Math.sin(v.gTilt),dx=sx-v.gx,a1=ux*c-uy*s,a2=ux*s+uy*c;
+  let endY=floorY,into=false;
+  if(Math.abs(a2)>.2){const dy=(level-dx*a1)/a2,lx=c*dx+s*dy,ly=-s*dx+c*dy;if(ly>GLASS.bottom-.01&&ly<GLASS.top&&Math.abs(lx)<GLASS.R(Math.max(ly,GLASS.bottom))*.97){endY=v.gy+dy;into=true;gLiq.U.uImpact.value.set(lx,ly,0)}}
+  const tEnd=(-fall+Math.sqrt(fall*fall+2*GRAVITY*Math.max(0,y0-endY)))/GRAVITY;
+  const g=tmp.g.set(0,-GRAVITY,0);
+  stepStream(v,!!latest?.pouring,tmp.lip.set(sx,y0,0),tmp.v0.set(0,-fall,0),g,dt);
+  drawStream(v,tEnd,time,.05);
+  const impact=v.sFront>=tEnd&&v.sTail<tEnd;
+  v.streamHit=impact&&into;
+  v.impAmp+=((v.streamHit?1:0)-v.impAmp)*Math.min(1,dt*5);gLiq.U.uImpactAmp.value=v.impAmp;
+  if(impact){
+   // Splash: a crown of droplets thrown up where the stream lands, bigger on a nearly empty glass or the table.
+   arcAt(v,tEnd,tmp.P,tmp.V);
+   v.splashAcc+=dt*(into?(v.gVol<.3?70:45):55);
+   while(v.splashAcc>=1){v.splashAcc-=1;tmp.S.copy(tmp.P).add(jitter(v,.05));tmp.D.set((Math.random()-.5)*2.4,(into?1.4:.8)+(into?2:1.5)*Math.random(),(Math.random()-.5)*1.2);spawnDrop(v,tmp.S,tmp.D,.016+.024*Math.random())}
+   if(into){const I=gLiq.U.uImpact.value;v.bubbleAcc+=dt*30;
+    while(v.bubbleAcc>=1){v.bubbleAcc-=1;const b=v.bubbleState[v.bubbleCursor];v.bubbleCursor=(v.bubbleCursor+1)%v.bubbleState.length;const depth=.08+.5*Math.random();
+     b.p.set(I.x-ux*depth+(Math.random()-.5)*.25,Math.max(GLASS.bottom+.04,I.y-uy*depth),(Math.random()-.5)*.3);b.speed=.45+.5*Math.random();b.size=.012+.02*Math.random();b.life=4;b.phase=Math.random()*6}}
+   else{v.puddleVol+=dt*.12;v.puddleX+=(sx-v.puddleX)*Math.min(1,dt*2)}
   }
-  const geometry=new THREE.BufferGeometry();
-  geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
-  geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
-  geometry.setIndex(indices);
-  stream.geometry.dispose();stream.geometry=geometry;
+  const M=tmp.M;
+  for(let i=0;i<v.bubbleState.length;i++){const b=v.bubbleState[i];
+   if(b.life>0){b.life-=dt;b.p.x+=(ux*b.speed+Math.sin(time*9+b.phase)*.06)*dt;b.p.y+=uy*b.speed*dt;
+    const r=GLASS.R(b.p.y)-.03,d=Math.hypot(b.p.x,b.p.z);if(r<=0)b.life=0;else if(d>r){b.p.x*=r/d;b.p.z*=r/d}
+    if(b.p.x*ux+b.p.y*uy>level-.01||v.gVol<=.004)b.life=0}
+   if(b.life<=0){bubbleInst.setMatrixAt(i,v.hiddenMatrix);continue}
+   M.makeScale(b.size,b.size,b.size).setPosition(b.p);bubbleInst.setMatrixAt(i,M);
+  }
+  bubbleInst.instanceMatrix.needsUpdate=true;
+  // Overflow: liquid above the downhill rim pours over it along an arc that widens the further it rises.
+  const lipSide=ux>=0?-1:1,excess=level+.05*gs.agit+.03*v.impAmp-(lipSide*GLASS.lipR*ux+GLASS.top*uy);
+  if(excess>0&&v.gVol>.01){
+   v.spillPending+=Math.min(v.gVol,(2.5*excess*Math.sqrt(excess)+.02)*dt)/V_GLASS*100;
+   v.overAcc+=dt*(25+140*Math.min(1,excess*5));
+   const spread=.35+Math.min(.9,excess*3),rr=GLASS.lipR+.06;
+   while(v.overAcc>=1){v.overAcc-=1;const ph=(Math.random()-.5)*2*spread,cr=Math.cos(ph),sr=Math.sin(ph),out=.35+2.2*Math.sqrt(excess)*Math.random();
+    glassGroup.localToWorld(tmp.S.set(lipSide*rr*cr,GLASS.top+.03,rr*sr));
+    tmp.D.set(lipSide*cr*out,.15*Math.random(),sr*out).applyEuler(glassGroup.rotation);tmp.D.x+=v.gvx;tmp.D.y+=v.gvy;
+    spawnDrop(v,tmp.S,tmp.D,.02+.03*Math.random())}
+  }
+  // Spilled soju leaves the glass for good: report it so both phones' totals drop.
+  if(v.spillPending>.3&&db&&room&&now-v.lastSpillSend>250){v.lastSpillSend=now;const amt=v.spillPending;v.spillPending=0;v.spillInFlight+=amt;
+   runTransaction(ref(db,'sojuRooms/'+room+'/amount'),x=>Math.max(0,(x||0)-amt),{applyLocally:false}).catch(()=>{}).finally(()=>{v.spillInFlight=Math.max(0,v.spillInFlight-amt)})}
+  stepDrops(v,dt,g,halfW,halfH,d=>{
+   if(d.v.y>=0)return false;
+   if(d.p.y<=floorY){v.puddleVol+=d.size*d.size*d.size*60;v.puddleX+=(d.p.x-v.puddleX)*.08;return true}
+   // Falling back into the glass: inside the wall and below the surface.
+   const L=glassGroup.worldToLocal(tmp.L.copy(d.p));
+   return L.y>GLASS.bottom&&L.y<GLASS.top&&Math.hypot(L.x,L.z)<GLASS.R(L.y)&&L.x*ux+L.y*uy<level;
+  });
+  v.puddleVol*=Math.exp(-dt*.06);
+  const pr=Math.min(2.4,Math.sqrt(v.puddleVol)*1.3);
+  puddle.visible=pr>.06;puddle.position.set(v.puddleX,floorY+.004,.15);puddle.scale.set(pr*1.25,pr,1);
  }
- drops3d.forEach((d,i)=>{
-  d.visible=pouring;if(!pouring)return;
-  const t=((phase*.62+i/42)%1);
-  const breakaway=t>.62;
-  d.visible=breakaway||i%7===0;
-  const lateral=role==='bottle'?.2*t*t:0;
-  d.position.set(x+lateral+Math.sin(i*13.7+phase)*(.02+.05*t),top-length*t,.42);
-  const scale=breakaway?.5+.45*t:.3;
-  d.scale.set(scale,scale*(1.6+Math.sin(i+phase)*.3),scale);
- });
- splashes.forEach((p,i)=>{
-  const impact=role==='glass'&&pouring&&Math.abs(x-glassGroup.position.x)<1;
-  p.visible=impact;if(!impact)return;
-  const t=(time*2.7+i*.173)%1,a=i*2.39996;
-  p.position.set(x+Math.cos(a)*t*.35,bottom+Math.sin(t*Math.PI)*.25,.45+Math.sin(a)*t*.22);
-  p.scale.setScalar((1-t)*(.8+((i*7)%5)*.15));
- });
  renderer.render(scene,camera);
 }
 
 function drops(x,y){let d=document.createElement('i');d.className='drop';d.style.left=x+'px';d.style.top=y+'px';$('water').appendChild(d);setTimeout(()=>d.remove(),560)}
-async function tick(now){requestAnimationFrame(tick);lastTick=now;if(!room||!latest)return;let towardGlass=signedTilt*sensorSign*glassSide>28;let active=role==='bottle'&&(manual||towardGlass)&&connected&&!done;if(active&&!capOpen){capOpen=true;capOpenedAt=now;$('openCap').textContent='🍾 뚜껑 닫기';}let aim=Math.max(.05,Math.min(.95,spoutX+side*.008));animate3D(now,active,aim);if(role==='bottle'){$('stream').classList.add('hidden');/* physical phone tilts, not the bottle drawing */if(now-lastSend>120){lastSend=now;update(r(),{pouring:active,aim,tilt:manual?55:tilt}).catch(()=>{});}if(active&&Math.random()<.65)drops(stage.clientWidth*aim,stage.clientHeight*spoutY)}else{const stream=$('stream');stream.classList.toggle('hidden',!latest.pouring);if(latest.pouring){stream.style.left=`calc(${(latest.aim??.5)*100}% - 4px)`;stream.style.top='0';stream.style.height='72%';if(Math.random()<.7)drops(stage.clientWidth*(latest.aim??.5),stage.clientHeight*.45);}if(latest.pouring&&connected&&amount<100){const hit=Math.abs((latest.aim??.5)-glassX)<($('glass').offsetWidth/stage.clientWidth)/2; if(hit&&now-lastSend>150){lastSend=now;runTransaction(ref(db,'sojuRooms/'+room+'/amount'),v=>Math.min(100,(v||0)+1.2),{applyLocally:false}).catch(()=>{});}}}}
+async function tick(now){requestAnimationFrame(tick);lastTick=now;if(!room||!latest)return;let towardGlass=signedTilt*sensorSign*glassSide>28;let active=role==='bottle'&&(manual||towardGlass)&&connected&&!done;if(active&&!capOpen){capOpen=true;capOpenedAt=now;$('openCap').textContent='🍾 뚜껑 닫기';}let aim=Math.max(.05,Math.min(.95,spoutX+side*.008));animate3D(now,active);if(role==='bottle'){$('stream').classList.add('hidden');/* physical phone tilts, not the bottle drawing */if(now-lastSend>120){lastSend=now;update(r(),{pouring:active,aim,tilt:manual?55:tilt}).catch(()=>{});}if(active&&Math.random()<.65)drops(stage.clientWidth*aim,stage.clientHeight*spoutY)}else{const stream=$('stream');stream.classList.toggle('hidden',!latest.pouring);if(latest.pouring){stream.style.left=`calc(${(latest.aim??.5)*100}% - 4px)`;stream.style.top='0';stream.style.height='72%';if(Math.random()<.7)drops(stage.clientWidth*(latest.aim??.5),stage.clientHeight*.45);}if(latest.pouring&&connected&&amount<100){const hit=visual3d?visual3d.streamHit:Math.abs((latest.aim??.5)-glassX)<($('glass').offsetWidth/stage.clientWidth)/2; if(hit&&now-lastSend>150){lastSend=now;runTransaction(ref(db,'sojuRooms/'+room+'/amount'),v=>Math.min(100,(v||0)+1.2),{applyLocally:false}).catch(()=>{});}}}}
 requestAnimationFrame(tick);
 </script></body></html>
