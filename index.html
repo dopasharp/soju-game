@@ -60,7 +60,9 @@ function init3D(){
  const label=new THREE.Mesh(new THREE.CylinderGeometry(.844,.844,1.1,48,1,true,Math.PI*.12,Math.PI*.76),new THREE.MeshStandardMaterial({map:labelTexture,side:THREE.DoubleSide,roughness:.65}));label.position.y=-.55;bottle.add(label);
  const bottleGlow=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.025,48),new THREE.MeshBasicMaterial({color:0xb2ffe4,transparent:true,opacity:.32}));bottleGlow.position.y=-2.02;bottle.add(bottleGlow);
  const bottleLiquidMat=new THREE.MeshPhysicalMaterial({color:0xc9f9ef,roughness:.13,metalness:0,transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide,clearcoat:1});
- const bottleLiquid=new THREE.Mesh(new THREE.CylinderGeometry(.69,.62,1,48),bottleLiquidMat);bottle.add(bottleLiquid);
+ const liquidOutline=[[-1.93,.58],[-1.82,.66],[.30,.70],[.53,.65],[.88,.29],[1.08,.245],[1.66,.245]];
+ const bottleLiquid=new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(0,-1.93),new THREE.Vector2(.58,-1.93),new THREE.Vector2(.245,1.66)],48),bottleLiquidMat);bottle.add(bottleLiquid);
+ let lastLiquidLevel=-1;
  const bottleSurface=new THREE.Mesh(new THREE.CircleGeometry(.69,48),new THREE.MeshPhysicalMaterial({color:0xe6ffff,transparent:true,opacity:.38,side:THREE.DoubleSide,roughness:.08}));bottleSurface.rotation.x=-Math.PI/2;bottle.add(bottleSurface);
  scene.add(bottle);
  const glassGroup=new THREE.Group(),glassMat=new THREE.MeshPhysicalMaterial({color:0xe3fffa,metalness:0,roughness:.08,transparent:true,opacity:.32,side:THREE.DoubleSide,depthWrite:false,clearcoat:1});
@@ -75,7 +77,7 @@ function init3D(){
  const drops3d=Array.from({length:42},()=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.052,8,8),dropMat);m.scale.set(.7,1.8,.7);scene.add(m);return m});
  const streamMat=new THREE.MeshBasicMaterial({color:0xb4f8ff,transparent:true,opacity:.58,depthWrite:false});
  const stream=new THREE.Mesh(new THREE.BufferGeometry(),streamMat);scene.add(stream);const splashMat=new THREE.MeshBasicMaterial({color:0xdfffff,transparent:true,opacity:.7,depthWrite:false});const splashes=Array.from({length:16},()=>{const p=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),splashMat);scene.add(p);return p});
- visual3d={renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,glassGroup,liquid,surface,drops3d,stream,splashes};
+ visual3d={renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,liquidOutline,lastLiquidLevel,glassGroup,liquid,surface,drops3d,stream,splashes};
  $('stage').classList.add('webgl');canvas.classList.remove('hidden');
  const resize=()=>{const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};
  new ResizeObserver(resize).observe(stage);resize();
@@ -94,13 +96,34 @@ function animate3D(now,active,aim){
   capPivot.position.y=THREE.MathUtils.lerp(capPivot.position.y,1.72+openAmount*.9,.09);
   capPivot.position.x=THREE.MathUtils.lerp(capPivot.position.x,openAmount*.45,.09);
   capPivot.rotation.y+=capOpen?.025:-capPivot.rotation.y*.08;
-  const remaining=Math.max(.04,1-amount/100),height=2.1*remaining;
-  bottleLiquid.scale.y=height;bottleLiquid.position.y=-1.92+height/2;
-  bottleSurface.position.y=-1.92+height;
-  liquidSway=THREE.MathUtils.lerp(liquidSway,THREE.MathUtils.clamp(-signedTilt*.009,-.28,.28),.045);
-  bottleSurface.rotation.set(-Math.PI/2+liquidSway*.7,Math.sin(time*4)*.06,Math.sin(time*5)*.09+liquidSway);
-  bottleLiquid.rotation.z=liquidSway*.13;
-  bottleSurface.scale.setScalar(.98+Math.sin(time*6)*.015);
+  // Fill all the way through the shoulders and up to the neck opening.
+  const remaining=Math.max(.005,1-amount/100);
+  const fillTop=-1.93+3.59*remaining;
+  const outline=v.liquidOutline;
+  let radius=outline[outline.length-1][1];
+  for(let i=1;i<outline.length;i++){
+   if(fillTop<=outline[i][0]){
+    const [y0,r0]=outline[i-1],[y1,r1]=outline[i];
+    radius=r0+(r1-r0)*THREE.MathUtils.clamp((fillTop-y0)/(y1-y0),0,1);
+    break;
+   }
+  }
+  if(Math.abs(fillTop-v.lastLiquidLevel)>.003){
+   const points=[new THREE.Vector2(0,-1.93)];
+   for(const [y,r] of outline){if(y<fillTop)points.push(new THREE.Vector2(r,y));}
+   points.push(new THREE.Vector2(radius,fillTop));
+   const newGeometry=new THREE.LatheGeometry(points,48);
+   bottleLiquid.geometry.dispose();bottleLiquid.geometry=newGeometry;
+   v.lastLiquidLevel=fillTop;
+  }
+  bottleSurface.position.y=fillTop;
+  bottleSurface.scale.set(radius/.69,radius/.69,1);
+  // Tilt-induced wave with springy settling and a small residual ripple.
+  const tiltTarget=THREE.MathUtils.clamp(-signedTilt*.013,-.42,.42);
+  liquidSway=THREE.MathUtils.lerp(liquidSway,tiltTarget,.065);
+  const ripple=Math.sin(time*8)*.035+Math.sin(time*5.3)*.018;
+  bottleSurface.rotation.set(-Math.PI/2+liquidSway*.8+ripple,Math.sin(time*3)*.05,liquidSway*.65+Math.cos(time*6)*.025);
+  bottleLiquid.rotation.z=liquidSway*.018;
  }else{
   const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
   glassGroup.position.set((glassX-.5)*visibleH*(w/h),-visibleH*.28,0);
