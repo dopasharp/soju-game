@@ -35,7 +35,7 @@ async function enableSensor(){try{if(typeof DeviceOrientationEvent==='undefined'
 $('sensor').onclick=enableSensor;$('calibrateConfirm').onclick=enableSensor;
 $('openCap').onclick=()=>{capOpen=!capOpen;capOpenedAt=performance.now();$('openCap').textContent=capOpen?'🍾 뚜껑 닫기':'🍾 뚜껑 열기';};
 $('reverse').onclick=()=>{sensorSign*=-1;$('reverse').textContent=sensorSign===1?'↔ 센서 방향 반대로':'↔ 센서 방향 반전됨';};const test=$('pour');for(const evt of ['pointerdown','pointerup','pointercancel','pointerleave'])test.addEventListener(evt,e=>{manual=evt==='pointerdown';if(manual)test.setPointerCapture(e.pointerId)});
-const stage=$('stage');let draggingGlass=false;stage.addEventListener('pointerdown',e=>{if(role!=='bottle')return;touchDragging=true;touchStartX=e.clientX;touchStartY=e.clientY;stage.setPointerCapture(e.pointerId)});stage.addEventListener('pointermove',e=>{if(!touchDragging||role!=='bottle')return;touchRotationY+=(e.clientX-touchStartX)*.012;touchStartX=e.clientX;touchStartY=e.clientY});stage.addEventListener('pointerup',()=>touchDragging=false);stage.addEventListener('pointercancel',()=>touchDragging=false);stage.addEventListener('pointerdown',e=>{if(role==='glass'&&e.target.closest('#glass')){draggingGlass=true;stage.setPointerCapture(e.pointerId);moveGlass(e)}});stage.addEventListener('pointermove',e=>{if(draggingGlass)moveGlass(e)});stage.addEventListener('pointerup',()=>draggingGlass=false);stage.addEventListener('pointercancel',()=>draggingGlass=false);function moveGlass(e){const b=stage.getBoundingClientRect();glassX=Math.max(.18,Math.min(.82,(e.clientX-b.left)/b.width));render()}
+const stage=$('stage');let draggingGlass=false;stage.addEventListener('pointerdown',e=>{if(role!=='bottle')return;const v=visual3d;if(v){const capPoint=new THREE.Vector3(0,1.9,0);v.bottle.localToWorld(capPoint);capPoint.project(v.camera);const rect=stage.getBoundingClientRect(),px=(capPoint.x*.5+.5)*rect.width+rect.left,py=(-capPoint.y*.5+.5)*rect.height+rect.top;if(Math.hypot(e.clientX-px,e.clientY-py)<Math.max(58,rect.width*.15)){const t=performance.now();if(t-lastCapTap<420){capOpen=!capOpen;capOpenedAt=t;$('openCap').textContent=capOpen?'🍾 뚜껑 닫기':'🍾 뚜껑 열기';lastCapTap=0;touchDragging=false;return;}lastCapTap=t;}}touchDragging=true;touchStartX=e.clientX;touchStartY=e.clientY;stage.setPointerCapture(e.pointerId)});stage.addEventListener('pointermove',e=>{if(!touchDragging||role!=='bottle')return;touchRotationY+=(e.clientX-touchStartX)*.012;touchStartX=e.clientX;touchStartY=e.clientY});stage.addEventListener('pointerup',()=>touchDragging=false);stage.addEventListener('pointercancel',()=>touchDragging=false);stage.addEventListener('pointerdown',e=>{if(role==='glass'&&e.target.closest('#glass')){draggingGlass=true;stage.setPointerCapture(e.pointerId);moveGlass(e)}});stage.addEventListener('pointermove',e=>{if(draggingGlass)moveGlass(e)});stage.addEventListener('pointerup',()=>draggingGlass=false);stage.addEventListener('pointercancel',()=>draggingGlass=false);function moveGlass(e){const b=stage.getBoundingClientRect();glassX=Math.max(.18,Math.min(.82,(e.clientX-b.left)/b.width));render()}
 function render(){let w=stage.clientWidth,h=stage.clientHeight;$('glass').style.left=glassX*100+'%';$('spout').style.left=spoutX*100+'%';$('spout').style.top=spoutY*100+'%';/* bottle stays visually fixed */}
 
 function init3D(){
@@ -93,8 +93,8 @@ function animate3D(now,active,aim){
   bottle.position.set(0,-.15,0);bottle.rotation.set(0,touchRotationY,0);
   const openAmount=capOpen?1:0;
   capPivot.rotation.z=THREE.MathUtils.lerp(capPivot.rotation.z,openAmount*-.65,.09);
-  capPivot.position.y=THREE.MathUtils.lerp(capPivot.position.y,1.72+openAmount*.9,.09);
-  capPivot.position.x=THREE.MathUtils.lerp(capPivot.position.x,openAmount*.45,.09);
+  const popTime=Math.max(0,(now-capOpenedAt)/1000);const popBounce=capOpen&&popTime<.8?Math.sin(Math.min(1,popTime/.8)*Math.PI)*.42:0;capPivot.position.y=THREE.MathUtils.lerp(capPivot.position.y,1.72+openAmount*.9+popBounce,.17);
+  capPivot.position.x=THREE.MathUtils.lerp(capPivot.position.x,openAmount*.45+popBounce*.35,.15);
   capPivot.rotation.y+=capOpen?.025:-capPivot.rotation.y*.08;
   // Fill all the way through the shoulders and up to the neck opening.
   const remaining=Math.max(.005,1-amount/100);
@@ -119,11 +119,11 @@ function animate3D(now,active,aim){
   bottleSurface.position.y=fillTop;
   bottleSurface.scale.set(radius/.69,radius/.69,1);
   // Tilt-induced wave with springy settling and a small residual ripple.
-  const tiltTarget=THREE.MathUtils.clamp(-signedTilt*.013,-.42,.42);
+  const tiltTarget=THREE.MathUtils.clamp(-signedTilt*.024,-.72,.72);
   liquidSway=THREE.MathUtils.lerp(liquidSway,tiltTarget,.065);
-  const ripple=Math.sin(time*8)*.035+Math.sin(time*5.3)*.018;
-  bottleSurface.rotation.set(-Math.PI/2+liquidSway*.8+ripple,Math.sin(time*3)*.05,liquidSway*.65+Math.cos(time*6)*.025);
-  bottleLiquid.rotation.z=liquidSway*.018;
+  const ripple=Math.sin(time*8)*.055+Math.sin(time*5.3)*.035;
+  bottleSurface.rotation.set(-Math.PI/2+liquidSway*.85+ripple,Math.sin(time*3)*.06,liquidSway*.85+Math.cos(time*6)*.04);
+  bottleLiquid.rotation.z=liquidSway*.035;
  }else{
   const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
   glassGroup.position.set((glassX-.5)*visibleH*(w/h),-visibleH*.28,0);
