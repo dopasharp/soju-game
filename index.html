@@ -46,7 +46,7 @@ function init3D(){
  scene.add(new THREE.HemisphereLight(0xe5fff6,0x184438,2.4));
  const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(-3,6,7);scene.add(light);
  const rim=new THREE.PointLight(0x80ffe4,65);rim.position.set(3,1,2);scene.add(rim);
- const green=new THREE.MeshPhysicalMaterial({color:0x23936c,metalness:0,roughness:.17,transparent:true,opacity:.78,side:THREE.DoubleSide,depthWrite:false,clearcoat:1,clearcoatRoughness:.09});
+ const green=new THREE.MeshPhysicalMaterial({color:0x167a59,metalness:0,roughness:.12,transparent:true,opacity:.43,side:THREE.DoubleSide,depthWrite:false,clearcoat:1,clearcoatRoughness:.09});
  const capMat=new THREE.MeshStandardMaterial({color:0xe2e9d7,metalness:.35,roughness:.27});
  const labelMat=new THREE.MeshStandardMaterial({color:0xeaf6d9,roughness:.6});
  const textCanvas=document.createElement('canvas');textCanvas.width=512;textCanvas.height=256;
@@ -58,9 +58,9 @@ function init3D(){
  const capPivot=new THREE.Group();capPivot.position.set(0,1.72,0);bottle.add(capPivot);const cap=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.35,40),capMat);cap.position.y=.18;capPivot.add(cap);
  const label=new THREE.Mesh(new THREE.CylinderGeometry(.844,.844,1.1,48,1,true,Math.PI*.12,Math.PI*.76),new THREE.MeshStandardMaterial({map:labelTexture,side:THREE.DoubleSide,roughness:.65}));label.position.y=-.55;bottle.add(label);
  const bottleGlow=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.025,48),new THREE.MeshBasicMaterial({color:0xb2ffe4,transparent:true,opacity:.32}));bottleGlow.position.y=-2.02;bottle.add(bottleGlow);
- const bottleLiquidMat=new THREE.MeshPhysicalMaterial({color:0xc1f8ec,roughness:.09,metalness:0,transparent:true,opacity:.64,depthWrite:false,side:THREE.DoubleSide,clearcoat:1});
- const bottleLiquid=new THREE.Mesh(new THREE.CylinderGeometry(.735,.68,1,48),bottleLiquidMat);bottle.add(bottleLiquid);
- const bottleSurface=new THREE.Mesh(new THREE.CircleGeometry(.735,48),new THREE.MeshPhysicalMaterial({color:0xe6ffff,transparent:true,opacity:.8,side:THREE.DoubleSide,roughness:.08}));bottleSurface.rotation.x=-Math.PI/2;bottle.add(bottleSurface);
+ const bottleLiquidMat=new THREE.MeshPhysicalMaterial({color:0xc9f9ef,roughness:.13,metalness:0,transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide,clearcoat:1});
+ const bottleLiquid=new THREE.Mesh(new THREE.CylinderGeometry(.69,.62,1,48),bottleLiquidMat);bottle.add(bottleLiquid);
+ const bottleSurface=new THREE.Mesh(new THREE.CircleGeometry(.69,48),new THREE.MeshPhysicalMaterial({color:0xe6ffff,transparent:true,opacity:.38,side:THREE.DoubleSide,roughness:.08}));bottleSurface.rotation.x=-Math.PI/2;bottle.add(bottleSurface);
  scene.add(bottle);
  const glassGroup=new THREE.Group(),glassMat=new THREE.MeshPhysicalMaterial({color:0xe3fffa,metalness:0,roughness:.08,transparent:true,opacity:.32,side:THREE.DoubleSide,depthWrite:false,clearcoat:1});
  const glassProfile=[[0,0],[.8,0],[.88,.15],[1.04,1.85],[1.07,1.9]];
@@ -93,13 +93,13 @@ function animate3D(now,active,aim){
   capPivot.position.y=THREE.MathUtils.lerp(capPivot.position.y,1.72+openAmount*.9,.09);
   capPivot.position.x=THREE.MathUtils.lerp(capPivot.position.x,openAmount*.45,.09);
   capPivot.rotation.y+=capOpen?.025:-capPivot.rotation.y*.08;
-  const remaining=Math.max(.04,1-amount/100),height=2.8*remaining;
-  bottleLiquid.scale.y=height;bottleLiquid.position.y=-1.94+height/2;
-  bottleSurface.position.y=-1.94+height;
+  const remaining=Math.max(.04,1-amount/100),height=2.1*remaining;
+  bottleLiquid.scale.y=height;bottleLiquid.position.y=-1.92+height/2;
+  bottleSurface.position.y=-1.92+height;
   liquidSway=THREE.MathUtils.lerp(liquidSway,THREE.MathUtils.clamp(-signedTilt*.009,-.28,.28),.045);
   bottleSurface.rotation.set(-Math.PI/2+liquidSway*.7,Math.sin(time*4)*.06,Math.sin(time*5)*.09+liquidSway);
   bottleLiquid.rotation.z=liquidSway*.13;
-  bottleSurface.scale.setScalar(1+Math.sin(time*6)*.025);
+  bottleSurface.scale.setScalar(.98+Math.sin(time*6)*.015);
  }else{
   const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
   glassGroup.position.set((glassX-.5)*visibleH*(w/h),-visibleH*.28,0);
