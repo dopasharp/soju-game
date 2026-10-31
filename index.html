@@ -18,7 +18,7 @@ const firebaseConfig = {
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {getDatabase,ref,set,update,onValue,get,runTransaction,remove,onDisconnect} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
-const $=id=>document.getElementById(id);let db,room='',role='',off=null,tilt=0,signedTilt=0,side=0,glassSide=1,sensorSign=1,sensorBaseGamma=null,sensorBaseBeta=0,manual=false,amount=0,connected=false,glassX=.5,spoutX=.12,spoutY=.42,latest=null,lastTick=performance.now(),lastSend=0,done=false,visual3d=null,toastTimer=null,capOpen=false,capOpenedAt=0,lastCapTap=0,liquidSway=0,touchRotationX=0,touchRotationY=0,touchStartX=0,touchStartY=0,touchDragging=false;
+const $=id=>document.getElementById(id);let db,room='',role='',off=null,tilt=0,signedTilt=0,side=0,glassSide=1,sensorSign=1,sensorBaseGamma=null,sensorBaseBeta=0,manual=false,amount=0,connected=false,glassX=.5,spoutX=.12,spoutY=.42,latest=null,lastTick=performance.now(),lastSend=0,done=false,visual3d=null,toastTimer=null,capOpen=false,capOpenedAt=0,lastCapTap=0,touchRotationX=0,touchRotationY=0,touchStartX=0,touchStartY=0,touchDragging=false;
 const configured=!firebaseConfig.apiKey.startsWith('PASTE_')&&!firebaseConfig.databaseURL.includes('PASTE_');
 try{if(configured)db=getDatabase(initializeApp(firebaseConfig));}catch(e){alert('Firebase 설정 오류: '+e.message)}
 function msg(t){$('status').textContent=t}function rnd(){return Math.random().toString(36).slice(2,8).toUpperCase()}
@@ -38,6 +38,43 @@ $('reverse').onclick=()=>{sensorSign*=-1;$('reverse').textContent=sensorSign===1
 const stage=$('stage');let draggingGlass=false;stage.addEventListener('pointerdown',e=>{if(role!=='bottle')return;const v=visual3d;if(v){const capPoint=new THREE.Vector3(0,1.9,0);v.bottle.localToWorld(capPoint);capPoint.project(v.camera);const rect=stage.getBoundingClientRect(),px=(capPoint.x*.5+.5)*rect.width+rect.left,py=(-capPoint.y*.5+.5)*rect.height+rect.top;if(Math.hypot(e.clientX-px,e.clientY-py)<Math.max(85,rect.width*.22)){const t=performance.now();if(t-lastCapTap<550){capOpen=!capOpen;capOpenedAt=t;$('openCap').textContent=capOpen?'🍾 뚜껑 닫기':'🍾 뚜껑 열기';lastCapTap=0;touchDragging=false;return;}lastCapTap=t;}}touchDragging=true;touchStartX=e.clientX;touchStartY=e.clientY;stage.setPointerCapture(e.pointerId)});stage.addEventListener('pointermove',e=>{if(!touchDragging||role!=='bottle')return;touchRotationY+=(e.clientX-touchStartX)*.012;touchStartX=e.clientX;touchStartY=e.clientY});stage.addEventListener('pointerup',()=>touchDragging=false);stage.addEventListener('pointercancel',()=>touchDragging=false);stage.addEventListener('pointerdown',e=>{if(role==='glass'&&e.target.closest('#glass')){draggingGlass=true;stage.setPointerCapture(e.pointerId);moveGlass(e)}});stage.addEventListener('pointermove',e=>{if(draggingGlass)moveGlass(e)});stage.addEventListener('pointerup',()=>draggingGlass=false);stage.addEventListener('pointercancel',()=>draggingGlass=false);function moveGlass(e){const b=stage.getBoundingClientRect();glassX=Math.max(.18,Math.min(.82,(e.clientX-b.left)/b.width));render()}
 function render(){let w=stage.clientWidth,h=stage.clientHeight;$('glass').style.left=glassX*100+'%';$('spout').style.left=spoutX*100+'%';$('spout').style.top=spoutY*100+'%';/* bottle stays visually fixed */}
 
+// Bottle interior in the bottle's (un-spun) local frame as [y, radius]; the liquid volume is computed from this.
+const INNER=[[-1.97,.6],[-1.9,.77],[.4,.77],[.66,.69],[1,.29],[1.15,.235],[1.7,.235]];
+const IN_BOTTOM=-1.97,IN_TOP=1.7,LIP_R=.235,FULL_LEVEL=1.3,GRAVITY=24;
+function innerR(y){if(y<IN_BOTTOM||y>IN_TOP)return 0;for(let i=1;i<INNER.length;i++)if(y<=INNER[i][0]){const [y0,r0]=INNER[i-1],[y1,r1]=INNER[i];return r0+(r1-r0)*(y-y0)/(y1-y0)}return LIP_R}
+const SLICES=72,SLICE_DY=(IN_TOP-IN_BOTTOM)/SLICES,SLICE_R=Array.from({length:SLICES},(_,i)=>innerR(IN_BOTTOM+(i+.5)*SLICE_DY));
+// Area of the part of a circle (radius r) with x < d.
+function segArea(r,d){if(d<=-r)return 0;if(d>=r)return Math.PI*r*r;return r*r*Math.acos(-d/r)+d*Math.sqrt(r*r-d*d)}
+// Integral of segArea(r,s) for s from -r to d, so a slice's volume is exact even when the plane crosses it.
+function segInt(r,d){if(d<=-r)return 0;if(d>=r)return Math.PI*r*r*(d-r)+Math.PI*r*r*r;const t=d/r,q=1-t*t;return r*r*r*(t*Math.acos(-t)+Math.sqrt(q)-q*Math.sqrt(q)/3)}
+// Volume inside the bottle below the plane dot(p,(ux,uy,0)) = h.
+function liquidVolume(ux,uy,h){const sx=Math.abs(ux)<1e-6?(ux<0?-1e-6:1e-6):ux;let v=0;for(let i=0;i<SLICES;i++){const y0=IN_BOTTOM+i*SLICE_DY,r=SLICE_R[i],d0=(sx>0?1:-1)*(h-y0*uy)/sx,d1=(sx>0?1:-1)*(h-(y0+SLICE_DY)*uy)/sx;v+=Math.abs(d1-d0)<1e-9?segArea(r,d0):(segInt(r,d1)-segInt(r,d0))/(d1-d0)}return v*SLICE_DY}
+function solveLevel(ux,uy,vol){let lo=-2.6,hi=2.6;for(let k=0;k<26;k++){const m=(lo+hi)/2;if(liquidVolume(ux,uy,m)<vol)lo=m;else hi=m}return (lo+hi)/2}
+// Smallest bottle tilt at which this volume reaches the neck lip.
+function pourAngle(vol){const excess=a=>solveLevel(Math.sin(a),Math.cos(a),vol)-(-LIP_R*Math.sin(a)+IN_TOP*Math.cos(a));if(excess(0)>=0)return 0;let lo=0,hi=2.9;for(let k=0;k<16;k++){const m=(lo+hi)/2;if(excess(m)<0)lo=m;else hi=m}return hi}
+const V_FULL=liquidVolume(0,1,FULL_LEVEL);
+const LIQ_HEAD=`uniform vec3 uUp;uniform vec3 uSide;uniform float uH;uniform float uTime;uniform float uWave;uniform float uWave2;uniform float uRipple;uniform float uR[33];
+float waveH(vec3 p){float l=dot(p,uSide);return uWave*cos(l*4.2)+uWave2*sin(l*6.3)+uRipple*(.012*sin(l*9.-uTime*6.+p.z*3.)+.009*sin(p.z*10.+uTime*5.+l*2.)+.006*sin((l+p.z)*17.-uTime*9.));}
+float innerRadius(float y){float f=clamp((y-(${IN_BOTTOM.toFixed(3)}))/${(IN_TOP-IN_BOTTOM).toFixed(3)},0.,1.)*32.;int i=int(floor(f));return mix(uR[i],uR[min(i+1,32)],fract(f));}
+varying vec3 vP;varying vec3 vN;varying vec3 vV;
+`;
+const LIQ_BODY_VERT=`varying vec3 vP;varying vec3 vN;varying vec3 vV;
+void main(){vP=position;vec4 mv=modelViewMatrix*vec4(position,1.);vN=normalize(normalMatrix*normal);vV=-mv.xyz;gl_Position=projectionMatrix*mv;}`;
+// The full-interior liquid mesh is cut away above the sloshing surface; a bright meniscus marks the waterline.
+const LIQ_BODY_FRAG=LIQ_HEAD+`void main(){float depth=uH+waveH(vP)-dot(vP,uUp);if(depth<0.)discard;
+vec3 n=normalize(gl_FrontFacing?vN:-vN),v=normalize(vV);float fr=pow(1.-abs(dot(n,v)),2.5),d=clamp(depth*.55,0.,1.);
+vec3 col=mix(vec3(.66,.95,.88),vec3(.33,.74,.66),d);float a=.22+.28*fr+.14*d,men=smoothstep(.05,0.,depth);
+col=mix(col,vec3(.94,1.,.98),men*.85);a=max(a,men*.8);gl_FragColor=vec4(col+fr*.22,a);}`;
+// A grid laid on the surface plane, displaced by the waves and trimmed to the bottle's inner wall.
+const LIQ_SURF_VERT=LIQ_HEAD+`vec3 surfP(vec2 g){vec3 p=uSide*g.x+vec3(0.,0.,g.y)+uUp*uH;return p+uUp*waveH(p);}
+void main(){vec2 g=position.xy;vec3 p=surfP(g);vec3 n=normalize(cross(surfP(g+vec2(0.,.02))-p,surfP(g+vec2(.02,0.))-p));
+vP=p;vN=normalize(normalMatrix*n);vec4 mv=modelViewMatrix*vec4(p,1.);vV=-mv.xyz;gl_Position=projectionMatrix*mv;}`;
+const LIQ_SURF_FRAG=LIQ_HEAD+`void main(){float edge=innerRadius(vP.y)-length(vP.xz);if(vP.y<${IN_BOTTOM.toFixed(3)}||vP.y>${IN_TOP.toFixed(3)}||edge<0.)discard;
+vec3 n=normalize(gl_FrontFacing?vN:-vN),v=normalize(vV),l=normalize(vec3(-.35,.75,.55));
+float spec=pow(max(dot(n,normalize(l+v)),0.),70.),fr=pow(1.-abs(dot(n,v)),3.);
+vec3 col=vec3(.8,.98,.94)*(.7+.3*max(dot(n,l),0.))+spec+fr*.2;float a=max(.42+.3*fr+spec*.5,smoothstep(.04,0.,edge)*.85);
+gl_FragColor=vec4(col,a);}`;
+
 function init3D(){
  if(visual3d)return;
  try{
@@ -53,18 +90,27 @@ function init3D(){
  const textCanvas=document.createElement('canvas');textCanvas.width=512;textCanvas.height=256;
  const ctx=textCanvas.getContext('2d');ctx.fillStyle='#eaf6d9';ctx.fillRect(0,0,512,256);ctx.fillStyle='#19533e';ctx.textAlign='center';ctx.font='bold 110px system-ui';ctx.fillText('소주',256,144);ctx.font='bold 38px system-ui';ctx.fillText('SOJU',256,207);
  const labelTexture=new THREE.CanvasTexture(textCanvas);labelTexture.colorSpace=THREE.SRGBColorSpace;
- const bottle=new THREE.Group();
+ // bottlePivot carries the on-screen pour tip; bottle (inside it) carries the touch spin, which the liquid ignores.
+ const bottlePivot=new THREE.Group(),bottle=new THREE.Group();bottlePivot.add(bottle);
  const profile=[[0,0],[.67,0],[.83,.13],[.83,2.45],[.75,2.72],[.34,3.06],[.29,3.2],[.29,3.77],[.36,3.77]];
- const body=new THREE.Mesh(new THREE.LatheGeometry(profile.map(p=>new THREE.Vector2(p[0],p[1])),48),green);body.position.y=-2.05;bottle.add(body);
+ const body=new THREE.Mesh(new THREE.LatheGeometry(profile.map(p=>new THREE.Vector2(p[0],p[1])),48),green);body.position.y=-2.05;body.renderOrder=3;bottle.add(body);
  const capPivot=new THREE.Group();capPivot.position.set(0,1.72,0);bottle.add(capPivot);const cap=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.35,40),capMat);cap.position.y=.18;capPivot.add(cap);
  const label=new THREE.Mesh(new THREE.CylinderGeometry(.844,.844,1.1,48,1,true,Math.PI*.12,Math.PI*.76),new THREE.MeshStandardMaterial({map:labelTexture,side:THREE.DoubleSide,roughness:.65}));label.position.y=-.55;bottle.add(label);
  const bottleGlow=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.025,48),new THREE.MeshBasicMaterial({color:0xb2ffe4,transparent:true,opacity:.32}));bottleGlow.position.y=-2.02;bottle.add(bottleGlow);
- const bottleLiquidMat=new THREE.MeshPhysicalMaterial({color:0xc9f9ef,roughness:.13,metalness:0,transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide,clearcoat:1});
- const liquidOutline=[[-1.93,.58],[-1.82,.66],[.30,.70],[.53,.65],[.88,.29],[1.08,.245],[1.66,.245]];
- const bottleLiquid=new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(0,-1.93),new THREE.Vector2(.58,-1.93),new THREE.Vector2(.245,1.66)],48),bottleLiquidMat);bottle.add(bottleLiquid);
- let lastLiquidLevel=-1;
- const bottleSurface=new THREE.Mesh(new THREE.CircleGeometry(.69,48),new THREE.MeshPhysicalMaterial({color:0xe6ffff,transparent:true,opacity:.38,side:THREE.DoubleSide,roughness:.08}));bottleSurface.rotation.x=-Math.PI/2;bottle.add(bottleSurface);
- scene.add(bottle);
+ const liqU={uUp:{value:new THREE.Vector3(0,1,0)},uSide:{value:new THREE.Vector3(1,0,0)},uH:{value:FULL_LEVEL},uTime:{value:0},uWave:{value:0},uWave2:{value:0},uRipple:{value:.25},uR:{value:Array.from({length:33},(_,i)=>innerR(IN_BOTTOM+i*(IN_TOP-IN_BOTTOM)/32))}};
+ const innerPoints=[new THREE.Vector2(0,IN_BOTTOM),...INNER.map(([y,r])=>new THREE.Vector2(r,y)),new THREE.Vector2(0,IN_TOP)];
+ const bottleLiquid=new THREE.Mesh(new THREE.LatheGeometry(innerPoints,48),new THREE.ShaderMaterial({uniforms:liqU,vertexShader:LIQ_BODY_VERT,fragmentShader:LIQ_BODY_FRAG,transparent:true,depthWrite:false,side:THREE.DoubleSide}));bottleLiquid.renderOrder=1;bottlePivot.add(bottleLiquid);
+ const bottleSurface=new THREE.Mesh(new THREE.PlaneGeometry(4.6,1.7,120,40),new THREE.ShaderMaterial({uniforms:liqU,vertexShader:LIQ_SURF_VERT,fragmentShader:LIQ_SURF_FRAG,transparent:true,depthWrite:false,side:THREE.DoubleSide}));bottleSurface.frustumCulled=false;bottleSurface.renderOrder=2;bottlePivot.add(bottleSurface);
+ scene.add(bottlePivot);
+ // Pour stream from the lip: a tube along a ballistic arc, rewritten in place each frame.
+ const SEG=44,AROUND=10,streamPos=new Float32Array((SEG+1)*AROUND*3),streamNorm=new Float32Array(streamPos.length),streamIdx=[];
+ for(let j=0;j<SEG;j++)for(let k=0;k<AROUND;k++){const n=j*AROUND+k,m=j*AROUND+(k+1)%AROUND;streamIdx.push(n,m,n+AROUND,m,m+AROUND,n+AROUND)}
+ const pourGeo=new THREE.BufferGeometry();pourGeo.setAttribute('position',new THREE.BufferAttribute(streamPos,3).setUsage(THREE.DynamicDrawUsage));pourGeo.setAttribute('normal',new THREE.BufferAttribute(streamNorm,3).setUsage(THREE.DynamicDrawUsage));pourGeo.setIndex(streamIdx);
+ const pourStream=new THREE.Mesh(pourGeo,new THREE.MeshStandardMaterial({color:0xbdf9ff,emissive:0x1d5560,roughness:.06,metalness:.1,transparent:true,opacity:.72,depthWrite:false}));pourStream.frustumCulled=false;pourStream.visible=false;scene.add(pourStream);
+ // Free droplets (spills, spray off the stream, drips after pouring) as one instanced mesh.
+ const DROP_N=220,dropInst=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xd2ffff,emissive:0x1d5560,roughness:.05,metalness:.1,transparent:true,opacity:.85,depthWrite:false}),DROP_N);
+ dropInst.frustumCulled=false;dropInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);const hiddenMatrix=new THREE.Matrix4().makeScale(0,0,0);for(let i=0;i<DROP_N;i++)dropInst.setMatrixAt(i,hiddenMatrix);scene.add(dropInst);
+ const dropState=Array.from({length:DROP_N},()=>({p:new THREE.Vector3(),v:new THREE.Vector3(),life:0,size:0}));
  const glassGroup=new THREE.Group(),glassMat=new THREE.MeshPhysicalMaterial({color:0xe3fffa,metalness:0,roughness:.08,transparent:true,opacity:.32,side:THREE.DoubleSide,depthWrite:false,clearcoat:1});
  const glassProfile=[[0,0],[.8,0],[.88,.15],[1.04,1.85],[1.07,1.9]];
  const vessel=new THREE.Mesh(new THREE.LatheGeometry(glassProfile.map(p=>new THREE.Vector2(p[0],p[1])),64),glassMat);glassGroup.add(vessel);
@@ -77,7 +123,9 @@ function init3D(){
  const drops3d=Array.from({length:42},()=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.052,8,8),dropMat);m.scale.set(.7,1.8,.7);scene.add(m);return m});
  const streamMat=new THREE.MeshBasicMaterial({color:0xb4f8ff,transparent:true,opacity:.58,depthWrite:false});
  const stream=new THREE.Mesh(new THREE.BufferGeometry(),streamMat);scene.add(stream);const splashMat=new THREE.MeshBasicMaterial({color:0xdfffff,transparent:true,opacity:.7,depthWrite:false});const splashes=Array.from({length:16},()=>{const p=new THREE.Mesh(new THREE.SphereGeometry(.025,6,6),splashMat);scene.add(p);return p});
- visual3d={renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,liquidOutline,lastLiquidLevel,glassGroup,liquid,surface,drops3d,stream,splashes};
+ visual3d={renderer,scene,camera,bottlePivot,bottle,capPivot,liqU,glassGroup,liquid,surface,drops3d,stream,splashes,pourStream,streamPos,streamNorm,SEG,AROUND,dropInst,dropState,hiddenMatrix,
+  slosh:0,sloshVel:0,agit:0,extra:0,cacheVol:-1,reqAngle:0,lastNow:0,streamWas:false,sFront:0,sTail:0,sLip:new THREE.Vector3(),sV0:new THREE.Vector3(),sG:new THREE.Vector3(),dribble:0,dropCursor:0,spawnAcc:0,
+  tmp:{g:new THREE.Vector3(),lip:new THREE.Vector3(),axis:new THREE.Vector3(),side:new THREE.Vector3(),v0:new THREE.Vector3(),P:new THREE.Vector3(),V:new THREE.Vector3(),J:new THREE.Vector3(),D:new THREE.Vector3(),S:new THREE.Vector3(),Y:new THREE.Vector3(0,1,0),Q:new THREE.Quaternion(),M:new THREE.Matrix4()}};
  $('stage').classList.add('webgl');canvas.classList.remove('hidden');
  const resize=()=>{const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};
  new ResizeObserver(resize).observe(stage);resize();
@@ -85,45 +133,80 @@ function init3D(){
 }
 function animate3D(now,active,aim){
  const v=visual3d;if(!v)return;
- const {renderer,scene,camera,bottle,capPivot,bottleLiquid,bottleSurface,glassGroup,liquid,surface,drops3d,stream,splashes}=v;
+ const {renderer,scene,camera,bottlePivot,bottle,capPivot,liqU,glassGroup,liquid,surface,drops3d,stream,splashes,pourStream,dropInst,dropState,tmp}=v;
  const h=stage.clientHeight,w=stage.clientWidth;
- bottle.visible=role==='bottle';glassGroup.visible=role==='glass';
+ bottlePivot.visible=role==='bottle';glassGroup.visible=role==='glass';
  const time=now*.001;
  if(role==='bottle'){
-  bottle.position.set(0,-.15,0);bottle.rotation.set(0,touchRotationY,0);
+  const dt=Math.min(.05,Math.max(0,(now-(v.lastNow||now))/1000));v.lastNow=now;
   const openAmount=capOpen?1:0;
   capPivot.rotation.z=THREE.MathUtils.lerp(capPivot.rotation.z,openAmount*-.65,.09);
   const popTime=Math.max(0,(now-capOpenedAt)/1000);const popBounce=capOpen&&popTime<.8?Math.sin(Math.min(1,popTime/.8)*Math.PI)*.42:0;capPivot.position.y=THREE.MathUtils.lerp(capPivot.position.y,1.72+openAmount*.9+popBounce,.17);
   capPivot.position.x=THREE.MathUtils.lerp(capPivot.position.x,openAmount*.45+popBounce*.35,.15);
   capPivot.rotation.y+=capOpen?.025:-capPivot.rotation.y*.08;
-  // Fill all the way through the shoulders and up to the neck opening.
-  const remaining=Math.max(.005,1-amount/100);
-  const fillTop=-1.93+3.59*remaining;
-  const outline=v.liquidOutline;
-  let radius=outline[outline.length-1][1];
-  for(let i=1;i<outline.length;i++){
-   if(fillTop<=outline[i][0]){
-    const [y0,r0]=outline[i-1],[y1,r1]=outline[i];
-    radius=r0+(r1-r0)*THREE.MathUtils.clamp((fillTop-y0)/(y1-y0),0,1);
-    break;
+  // The phone itself is the bottle: its roll (toward the glass = positive) turns real gravity on screen.
+  const phone=THREE.MathUtils.degToRad(THREE.MathUtils.clamp(signedTilt*sensorSign*glassSide,-170,170));
+  // Full at the neck, emptying as the glass fills.
+  const vol=V_FULL*Math.max(.03,1-amount/100);
+  if(Math.abs(vol-v.cacheVol)>1e-4){v.cacheVol=vol;v.reqAngle=pourAngle(vol)}
+  // While pouring, tip the drawn bottle further until the liquid actually reaches the lip.
+  const extraTarget=active?Math.max(0,v.reqAngle+.18-phone):0;
+  v.extra+=(extraTarget-v.extra)*Math.min(1,dt*(active?2.6:3.5));
+  const e=v.extra,se=Math.sin(Math.min(e,Math.PI/2));
+  bottlePivot.position.set(0,-.15+.4*se,0);bottlePivot.rotation.set(0,0,e);bottlePivot.scale.setScalar(1-.35*se);
+  bottle.position.set(0,0,0);bottle.rotation.set(0,touchRotationY,0);
+  // Damped spring: the surface lags the bottle's tilt, overshoots and settles (first slosh mode).
+  const target=phone+e,omega=2*Math.PI*1.4,zeta=.075;
+  for(let s=0;s<2;s++){const sub=dt/2;v.sloshVel+=(omega*omega*(target-v.slosh)-2*zeta*omega*v.sloshVel)*sub;v.slosh+=v.sloshVel*sub}
+  v.agit=Math.max(Math.min(1,Math.abs(v.sloshVel)*.22+Math.abs(target-v.slosh)*.9+(active?.35:0)),v.agit*Math.exp(-dt*1.2));
+  const ux=Math.sin(v.slosh),uy=Math.cos(v.slosh),level=solveLevel(ux,uy,vol);
+  liqU.uUp.value.set(ux,uy,0);liqU.uSide.value.set(uy,-ux,0);liqU.uH.value=level;liqU.uTime.value=time;
+  liqU.uWave.value=.055*v.agit*Math.sin(time*13.8);liqU.uWave2.value=.03*v.agit*Math.sin(time*21.4+1);liqU.uRipple.value=.25+1.5*v.agit;
+  // Spilling: liquid above the downhill side of the lip leaves the bottle once the cap is clear.
+  bottlePivot.updateMatrixWorld();
+  const lipSide=ux>=0?-1:1,lipX=lipSide*LIP_R;
+  const excess=level+.03*v.agit-(lipX*ux+IN_TOP*uy);
+  const flowing=capOpen&&capPivot.position.y>2.25&&excess>0;
+  const viewH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z,halfH=viewH/2,halfW=halfH*w/h;
+  const g=tmp.g.set(-Math.sin(phone),-Math.cos(phone),0).multiplyScalar(GRAVITY);
+  const lipW=tmp.lip.set(lipX,IN_TOP,0).applyMatrix4(bottlePivot.matrixWorld);
+  tmp.axis.set(-Math.sin(e),Math.cos(e),0);tmp.side.set(lipSide*Math.cos(e),lipSide*Math.sin(e),0);
+  const v0=tmp.v0.copy(tmp.axis).addScaledVector(tmp.side,.7).normalize().multiplyScalar(1.1+5*Math.sqrt(Math.max(0,excess)));
+  const streamOn=flowing&&active;
+  if(streamOn){if(!v.streamWas){v.sFront=0;v.sTail=0}v.sLip.copy(lipW);v.sV0.copy(v0);v.sG.copy(g);v.sFront=Math.min(1.2,v.sFront+dt)}
+  else if(v.streamWas||v.sTail<v.sFront){if(v.streamWas)v.dribble=.8;v.sFront+=dt;v.sTail+=dt*1.15}
+  v.streamWas=streamOn;
+  const arcAt=(t,P,V)=>{V.copy(v.sV0).addScaledVector(v.sG,t);P.copy(v.sLip).addScaledVector(v.sV0,t).addScaledVector(v.sG,.5*t*t)};
+  pourStream.visible=v.sFront-v.sTail>.005&&v.sTail<1.2;
+  if(pourStream.visible){
+   const {SEG,AROUND,streamPos:pos,streamNorm:nor}=v,P=tmp.P,V=tmp.V,t0=v.sTail,t1=Math.min(v.sFront,1.2),v0len=v.sV0.length();
+   for(let j=0;j<=SEG;j++){
+    const t=t0+(t1-t0)*j/SEG;arcAt(t,P,V);
+    const sp=V.length()||1,nx=V.y/sp,ny=-V.x/sp;
+    // Thins as it speeds up (continuity), wobbles, and tapers where it starts or breaks off.
+    let r=.062*Math.sqrt(v0len/sp)*(1+.12*Math.sin(t*40-time*18)+.06*Math.sin(t*90-time*31));
+    r*=Math.min(1,(SEG-j)/5+.2);if(t0>0)r*=Math.min(1,j/5+.2);
+    for(let k=0;k<AROUND;k++){const a=k/AROUND*Math.PI*2,c=Math.cos(a),s=Math.sin(a),o=(j*AROUND+k)*3;
+     nor[o]=nx*c;nor[o+1]=ny*c;nor[o+2]=s;pos[o]=P.x+nx*c*r;pos[o+1]=P.y+ny*c*r;pos[o+2]=P.z+s*r}
    }
+   pourStream.geometry.attributes.position.needsUpdate=true;pourStream.geometry.attributes.normal.needsUpdate=true;
   }
-  if(Math.abs(fillTop-v.lastLiquidLevel)>.003){
-   const points=[new THREE.Vector2(0,-1.93)];
-   for(const [y,r] of outline){if(y<fillTop)points.push(new THREE.Vector2(r,y));}
-   points.push(new THREE.Vector2(radius,fillTop));
-   const newGeometry=new THREE.LatheGeometry(points,48);
-   bottleLiquid.geometry.dispose();bottleLiquid.geometry=newGeometry;
-   v.lastLiquidLevel=fillTop;
+  // Droplets: spray off the stream, spills from sloshing, and the last drips after a pour.
+  const spawn=(p,vel,size)=>{const d=dropState[v.dropCursor];v.dropCursor=(v.dropCursor+1)%dropState.length;d.p.copy(p);d.v.copy(vel);d.life=2.5;d.size=size};
+  const jitter=(a)=>tmp.J.set((Math.random()-.5)*2*a,(Math.random()-.5)*2*a,(Math.random()-.5)*a);
+  const rate=streamOn?42:flowing?10+60*Math.min(1,excess*6):v.dribble>0&&capOpen?12:0;
+  v.dribble=Math.max(0,v.dribble-dt);v.spawnAcc+=rate*dt;
+  while(v.spawnAcc>=1){v.spawnAcc-=1;
+   if(streamOn&&Math.random()<.7){arcAt(v.sFront*(.3+.7*Math.random()),tmp.P,tmp.V);tmp.P.add(jitter(.05));tmp.V.multiplyScalar(.9+.2*Math.random()).add(jitter(.7));spawn(tmp.P,tmp.V,.018+.03*Math.random())}
+   else{tmp.P.copy(lipW).add(jitter(.04));tmp.V.copy(v0).multiplyScalar(flowing?.75:.2).add(jitter(.35));spawn(tmp.P,tmp.V,.025+.035*Math.random())}
   }
-  bottleSurface.position.y=fillTop;
-  bottleSurface.scale.set(radius/.69,radius/.69,1);
-  // Tilt-induced wave with springy settling and a small residual ripple.
-  const tiltTarget=THREE.MathUtils.clamp(-signedTilt*.024,-.72,.72);
-  liquidSway=THREE.MathUtils.lerp(liquidSway,tiltTarget,.065);
-  const ripple=Math.sin(time*8)*.055+Math.sin(time*5.3)*.035;
-  bottleSurface.rotation.set(-Math.PI/2+liquidSway*.85+ripple,Math.sin(time*3)*.06,liquidSway*.85+Math.cos(time*6)*.04);
-  bottleLiquid.rotation.z=liquidSway*.035;
+  const {M,Q,S,D,Y}=tmp;
+  for(let i=0;i<dropState.length;i++){const d=dropState[i];
+   if(d.life>0){d.v.addScaledVector(g,dt);d.p.addScaledVector(d.v,dt);d.life-=dt;if(Math.abs(d.p.x)>halfW+1||Math.abs(d.p.y)>halfH+1)d.life=0}
+   if(d.life<=0){dropInst.setMatrixAt(i,v.hiddenMatrix);continue}
+   const sp=d.v.length();D.copy(d.v).divideScalar(sp||1);Q.setFromUnitVectors(Y,D);S.set(d.size,d.size*(1+Math.min(2.5,sp*.12)),d.size);M.compose(d.p,Q,S);dropInst.setMatrixAt(i,M);
+  }
+  dropInst.instanceMatrix.needsUpdate=true;
  }else{
   const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
   glassGroup.position.set((glassX-.5)*visibleH*(w/h),-visibleH*.28,0);
@@ -131,7 +214,8 @@ function animate3D(now,active,aim){
   liquid.scale.y=level;liquid.position.y=level/2+.08;
   surface.position.y=level+.08;
  }
- const pouring=role==='bottle'?active:!!latest?.pouring;
+ // The bottle draws its own stream and droplets above; this simpler one is the glass phone's.
+ const pouring=role==='glass'&&!!latest?.pouring;
  const visibleH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z;
  const x=role==='glass'?(aim-.5)*visibleH*(w/h):0;
  const top=role==='glass'?visibleH*.54:1.98;
