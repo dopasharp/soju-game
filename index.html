@@ -83,7 +83,7 @@ function makeVessel(points){
  return {points,bottom,top,dy,slices,R,lipR:points[points.length-1][1],sliceR:Array.from({length:slices},(_,i)=>R(bottom+(i+.5)*dy)),uR:Array.from({length:33},(_,i)=>R(bottom+i*(top-bottom)/32))};
 }
 const BOTTLE=makeVessel([[-1.97,.6],[-1.9,.77],[.4,.77],[.66,.69],[1,.29],[1.15,.235],[1.7,.235]]);
-const GLASS=makeVessel([[.14,.7],[.22,.8],[1.86,.985]]);
+const GLASS=makeVessel([[.3,.72],[.36,.79],[1.86,.985]]);
 // Area of the part of a circle (radius r) with x < d.
 function segArea(r,d){if(d<=-r)return 0;if(d>=r)return Math.PI*r*r;return r*r*Math.acos(-d/r)+d*Math.sqrt(r*r-d*d)}
 // Integral of segArea(r,s) for s from -r to d, so a slice's volume is exact even when the plane crosses it.
@@ -103,6 +103,29 @@ return uWave*cos(l*4.2)+uWave2*sin(l*6.3)+uRipple*(.012*sin(l*9.-uTime*6.+p.z*3.
 float innerRadius(float y){float f=clamp((y-uBottom)/uSpan,0.,1.)*32.;int i=int(floor(f));return mix(uR[i],uR[min(i+1,32)],fract(f));}
 varying vec3 vP;varying vec3 vN;varying vec3 vV;
 `;
+// Glass: mostly clear face-on, reflective toward the edges (Fresnel), tinted where light crosses more glass.
+const GLASS_VERT=`varying vec3 vWN;varying vec3 vWP;varying vec3 vLP;
+void main(){vLP=position;vec4 wp=modelMatrix*vec4(position,1.);vWP=wp.xyz;vWN=normalize(mat3(modelMatrix)*normal);gl_Position=projectionMatrix*viewMatrix*wp;}`;
+const GLASS_FRAG=`uniform sampler2D uEnv;uniform float uOuter;uniform float uBack;
+varying vec3 vWN;varying vec3 vWP;varying vec3 vLP;
+vec3 env(vec3 d){return texture2D(uEnv,vec2(atan(d.z,d.x)*.15915+.5,acos(clamp(d.y,-1.,1.))*.31831)).rgb;}
+void main(){vec3 n=normalize(gl_FrontFacing?vWN:-vWN),v=normalize(cameraPosition-vWP);float nv=abs(dot(n,v));
+// Squaring the studio keeps the softboxes bright and the surroundings dim, so highlights stay crisp and white.
+float F=.05+.95*pow(1.-nv,5.);vec3 e=env(reflect(-v,n)),refl=e*e*3.;
+// Light crossing the wall at a grazing angle travels through more glass, so edges read darker and greener;
+// the heavy base is solid glass.
+float body=.035*min(4.,1./max(nv,.22))+uOuter*.22*smoothstep(.36,.2,vLP.y);
+// The rounded lip catches a bright line.
+float lip=.14*smoothstep(1.86,1.9,vLP.y);
+float a=clamp(F+body+lip,0.,.96)*(uBack>.5?.65:1.);
+gl_FragColor=vec4((refl*F+vec3(.28,.48,.43)*body+vec3(.85,1.,.95)*lip)/max(F+body+lip,1e-3),a);}`;
+// A soft studio around the glass: the white softboxes become the long highlight streaks on its walls.
+function makeStudioEnv(){
+ const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');
+ const g=x.createLinearGradient(0,0,0,256);g.addColorStop(0,'#9fd8c6');g.addColorStop(.42,'#2f6f5f');g.addColorStop(.55,'#123d34');g.addColorStop(1,'#061a16');x.fillStyle=g;x.fillRect(0,0,512,256);
+ x.fillStyle='#fff';x.fillRect(428,46,40,100);x.fillRect(300,58,12,86);x.globalAlpha=.6;x.fillRect(340,6,110,16);x.globalAlpha=1;
+ const t=new THREE.CanvasTexture(c);t.wrapS=THREE.RepeatWrapping;t.minFilter=THREE.LinearFilter;t.generateMipmaps=false;return t;
+}
 const LIQ_BODY_VERT=`varying vec3 vP;varying vec3 vN;varying vec3 vV;
 void main(){vP=position;vec4 mv=modelViewMatrix*vec4(position,1.);vN=normalize(normalMatrix*normal);vV=-mv.xyz;gl_Position=projectionMatrix*mv;}`;
 // The full-interior liquid mesh is cut away above the sloshing surface; a bright meniscus marks the waterline.
@@ -183,10 +206,22 @@ function init3D(){
  const bottleGlow=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.025,48),new THREE.MeshBasicMaterial({color:0xb2ffe4,transparent:true,opacity:.32}));bottleGlow.position.y=-2.02;bottle.add(bottleGlow);
  const bLiq=makeLiquid(BOTTLE,4.6,1.7,bottlePivot);
  scene.add(bottlePivot);
- const glassGroup=new THREE.Group(),glassMat=new THREE.MeshPhysicalMaterial({color:0xe3fffa,metalness:0,roughness:.08,transparent:true,opacity:.32,side:THREE.DoubleSide,depthWrite:false,clearcoat:1});
- const glassProfile=[[0,0],[.8,0],[.88,.15],[1.04,1.85],[1.07,1.9]];
- const vessel=new THREE.Mesh(new THREE.LatheGeometry(glassProfile.map(p=>new THREE.Vector2(p[0],p[1])),64),glassMat);vessel.renderOrder=3;glassGroup.add(vessel);
- const rimMesh=new THREE.Mesh(new THREE.TorusGeometry(1.07,.045,12,64),new THREE.MeshStandardMaterial({color:0xe8fffc,metalness:.12,roughness:.12,transparent:true,opacity:.8}));rimMesh.rotation.x=Math.PI/2;rimMesh.position.y=1.9;rimMesh.renderOrder=3;glassGroup.add(rimMesh);
+ // Soju glass as a thick-walled shell ([radius, y]): outer wall over a rounded lip, inner wall down to a heavy base.
+ // Lathe front faces follow the profile direction, so the outer faces out and the inner faces into the cavity.
+ const glassGroup=new THREE.Group(),studioEnv=makeStudioEnv();
+ const outerProfile=[[0,0],[.6,0],[.72,.012],[.8,.05],[.86,.13],[1.04,1.82],[1.058,1.875],[1.05,1.905],[1.025,1.918],[.998,1.905],[.985,1.86]];
+ const innerProfile=[[.985,1.86],[.79,.36],[.745,.31],[.6,.3],[0,.3]];
+ const outerGeo=new THREE.LatheGeometry(outerProfile.map(([r,y])=>new THREE.Vector2(r,y)),72),innerGeo=new THREE.LatheGeometry(innerProfile.map(([r,y])=>new THREE.Vector2(r,y)),72);
+ // Far walls draw before the liquid, near walls after it.
+ for(const [geo,outer,side,order] of [[outerGeo,1,THREE.BackSide,0],[innerGeo,0,THREE.FrontSide,0],[innerGeo,0,THREE.BackSide,3],[outerGeo,1,THREE.FrontSide,3]]){
+  const wall=new THREE.Mesh(geo,new THREE.ShaderMaterial({uniforms:{uEnv:{value:studioEnv},uOuter:{value:outer},uBack:{value:order?0:1}},vertexShader:GLASS_VERT,fragmentShader:GLASS_FRAG,transparent:true,depthWrite:false,side}));
+  wall.renderOrder=order;glassGroup.add(wall);
+ }
+ // Contact shadow on the table, with the bright spot a glass focuses light into.
+ const sc=document.createElement('canvas');sc.width=sc.height=128;const sctx=sc.getContext('2d');
+ let grad=sctx.createRadialGradient(64,64,0,64,64,64);grad.addColorStop(0,'rgba(0,0,0,.55)');grad.addColorStop(.55,'rgba(0,0,0,.32)');grad.addColorStop(1,'rgba(0,0,0,0)');sctx.fillStyle=grad;sctx.fillRect(0,0,128,128);
+ grad=sctx.createRadialGradient(56,64,0,56,64,26);grad.addColorStop(0,'rgba(205,255,235,.6)');grad.addColorStop(1,'rgba(205,255,235,0)');sctx.fillStyle=grad;sctx.fillRect(0,0,128,128);
+ const contact=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sc),transparent:true,depthWrite:false}));contact.rotation.x=-Math.PI/2;contact.renderOrder=-1;contact.visible=false;scene.add(contact);
  const gLiq=makeLiquid(GLASS,2.4,2.4,glassGroup);
  // Bubbles pushed under by the stream, rising back to the surface (glass-local).
  const hiddenMatrix=new THREE.Matrix4().makeScale(0,0,0);
@@ -203,9 +238,9 @@ function init3D(){
  const pourStream=new THREE.Mesh(pourGeo,new THREE.MeshStandardMaterial({color:0xbdf9ff,emissive:0x1d5560,roughness:.06,metalness:.1,transparent:true,opacity:.72,depthWrite:false}));pourStream.frustumCulled=false;pourStream.visible=false;scene.add(pourStream);
  // Free droplets (spills, spray, splashes, drips) as one instanced mesh.
  const DROP_N=260,dropInst=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xd2ffff,emissive:0x1d5560,roughness:.05,metalness:.1,transparent:true,opacity:.85,depthWrite:false}),DROP_N);
- dropInst.frustumCulled=false;dropInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);for(let i=0;i<DROP_N;i++)dropInst.setMatrixAt(i,hiddenMatrix);scene.add(dropInst);
+ dropInst.frustumCulled=false;dropInst.renderOrder=4;dropInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);for(let i=0;i<DROP_N;i++)dropInst.setMatrixAt(i,hiddenMatrix);scene.add(dropInst);
  const dropState=Array.from({length:DROP_N},()=>({p:new THREE.Vector3(),v:new THREE.Vector3(),life:0,size:0}));
- visual3d={renderer,scene,camera,bottlePivot,bottle,capPivot,bLiq,glassGroup,gLiq,bubbleInst,bubbleState,puddle,pourStream,streamPos,streamNorm,SEG,AROUND,dropInst,dropState,hiddenMatrix,
+ visual3d={renderer,scene,camera,bottlePivot,bottle,capPivot,bLiq,glassGroup,gLiq,bubbleInst,bubbleState,puddle,contact,pourStream,streamPos,streamNorm,SEG,AROUND,dropInst,dropState,hiddenMatrix,
   bs:{angle:0,vel:0,agit:0},gs:{angle:0,vel:0,agit:0},extra:0,cacheVol:-1,reqAngle:0,lastNow:0,streamWas:false,sFront:0,sTail:0,sLip:new THREE.Vector3(),sV0:new THREE.Vector3(),sG:new THREE.Vector3(),dribble:0,dropCursor:0,spawnAcc:0,
   aimSm:.5,gx:0,gy:null,gyVel:0,gTilt:0,gTiltVel:0,gvx:0,gvy:0,gax:0,gay:0,gVol:0,impAmp:0,streamHit:false,splashAcc:0,bubbleAcc:0,bubbleCursor:0,overAcc:0,spillPending:0,spillInFlight:0,lastSpillSend:0,puddleVol:0,puddleX:0,
   tmp:{g:new THREE.Vector3(),lip:new THREE.Vector3(),axis:new THREE.Vector3(),side:new THREE.Vector3(),v0:new THREE.Vector3(),P:new THREE.Vector3(),V:new THREE.Vector3(),J:new THREE.Vector3(),D:new THREE.Vector3(),S:new THREE.Vector3(),L:new THREE.Vector3(),Y:new THREE.Vector3(0,1,0),Q:new THREE.Quaternion(),M:new THREE.Matrix4()}};
@@ -216,9 +251,9 @@ function init3D(){
 }
 function animate3D(now,active){
  const v=visual3d;if(!v)return;
- const {renderer,scene,camera,bottlePivot,bottle,capPivot,glassGroup,gLiq,bubbleInst,puddle,tmp}=v;
+ const {renderer,scene,camera,bottlePivot,bottle,capPivot,glassGroup,gLiq,bubbleInst,puddle,contact,tmp}=v;
  const h=stage.clientHeight,w=stage.clientWidth;
- bottlePivot.visible=role==='bottle';glassGroup.visible=role==='glass';
+ bottlePivot.visible=role==='bottle';glassGroup.visible=contact.visible=role==='glass';
  const time=now*.001,dt=Math.min(.05,Math.max(0,(now-(v.lastNow||now))/1000));v.lastNow=now;
  const viewH=2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*camera.position.z,halfH=viewH/2,halfW=halfH*w/h;
  if(role==='bottle'){
@@ -320,7 +355,7 @@ function animate3D(now,active){
    v.overAcc+=dt*(25+140*Math.min(1,excess*5));
    const spread=.35+Math.min(.9,excess*3),rr=GLASS.lipR+.06;
    while(v.overAcc>=1){v.overAcc-=1;const ph=(Math.random()-.5)*2*spread,cr=Math.cos(ph),sr=Math.sin(ph),out=.35+2.2*Math.sqrt(excess)*Math.random();
-    glassGroup.localToWorld(tmp.S.set(lipSide*rr*cr,GLASS.top+.03,rr*sr));
+    glassGroup.localToWorld(tmp.S.set(lipSide*rr*cr,GLASS.top+.06,rr*sr));
     tmp.D.set(lipSide*cr*out,.15*Math.random(),sr*out).applyEuler(glassGroup.rotation);tmp.D.x+=v.gvx;tmp.D.y+=v.gvy;
     spawnDrop(v,tmp.S,tmp.D,.02+.03*Math.random())}
   }
@@ -337,6 +372,9 @@ function animate3D(now,active){
   v.puddleVol*=Math.exp(-dt*.06);
   const pr=Math.min(2.4,Math.sqrt(v.puddleVol)*1.3);
   puddle.visible=pr>.06;puddle.position.set(v.puddleX,floorY+.004,.15);puddle.scale.set(pr*1.25,pr,1);
+  // The shadow spreads and fades as the glass is lifted off the table.
+  const lift=Math.max(0,v.gy-floorY),cs=2.5+lift*.7;
+  contact.position.set(v.gx+.06,floorY+.002,0);contact.scale.set(cs,cs*.9,1);contact.material.opacity=Math.max(.15,1-lift*.9);
  }
  renderer.render(scene,camera);
 }
