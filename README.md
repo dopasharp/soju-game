@@ -1,0 +1,49 @@
+# 🍶 짠! 소주 따르기
+
+휴대폰 두 대를 이용하는 GitHub Pages + Firebase Realtime Database 게임입니다.
+
+## 1. Firebase 설정
+
+1. Firebase Console에서 프로젝트를 엽니다.
+2. **빌드 → Realtime Database → 데이터베이스 만들기**를 선택합니다. (Firestore가 아니라 Realtime Database입니다.)
+3. **프로젝트 설정 → 내 앱 → 웹 앱 추가**에서 `firebaseConfig`를 확인합니다.
+4. `index.html` 맨 아래쪽의 `firebaseConfig`에서 `apiKey`, `authDomain`, `databaseURL`, `projectId`, `appId`를 실제 값으로 교체합니다. `databaseURL`은 Realtime Database 화면에서 제공하는 정확한 주소를 사용하세요.
+5. 테스트용으로 Realtime Database **규칙**에 아래 내용을 붙여넣고 게시합니다.
+
+```json
+{
+  "rules": {
+    "rooms": {
+      "$room": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}
+```
+
+**주의:** 이 규칙은 데모 전용으로, 인터넷의 누구나 방 데이터를 읽거나 변경할 수 있습니다. 개인정보를 저장하지 마세요. 공개 서비스에는 Firebase Authentication과 보안 규칙, 방 접근 권한 검증, 요청 제한이 필요합니다. 무료 Spark 요금제 한도와 프로젝트별 설정도 확인하세요.
+
+## 2. GitHub Pages 배포
+
+1. GitHub에서 새 공개 저장소를 만듭니다. 예: `soju-pour`.
+2. 수정한 `index.html` 파일을 저장소 최상위에 업로드하고 커밋합니다.
+3. **Settings → Pages → Build and deployment → Deploy from a branch → main / (root) → Save**.
+4. 잠시 후 `https://사용자명.github.io/soju-pour/`에서 접속합니다.
+
+## 3. 플레이
+
+1. 첫 번째 폰에서 **소주병으로 방 만들기**를 누릅니다.
+2. 두 번째 폰에서 동일한 주소를 열고 방 코드를 입력해 **소주잔으로 입장**합니다.
+3. 소주병 폰에서 **기울기 센서 켜기**를 누르고 권한을 허용합니다. iPhone은 사용자 버튼 클릭 후 센서 권한을 요청해야 합니다.
+4. 소주병 폰에서 노란 출구 점을 드래그하고, 소주잔 폰에서 잔을 드래그하여 물줄기가 잔에 닿도록 보정합니다.
+5. 소주병 폰을 기울이거나 **테스트 따르기**를 길게 눌러 잔을 채웁니다.
+
+## 알아둘 점
+
+- 기울기 센서만으로 **두 기기의 실제 상대 위치를 자동 측정할 수 없습니다.** 위치는 각 폰에서 수동 보정합니다.
+- 물줄기와 잔의 충돌은 두 화면에서 공유하는 정규화된 가로 좌표로 판정하는 **게임용 연출**입니다. 실제 공간에서 화면 경계를 정확히 통과하는 물리 시뮬레이션은 아닙니다.
+- 센서 방향/축은 기종 및 화면 회전에 따라 다릅니다. 현재 데모는 `gamma`의 절댓값을 사용하며, 일부 기종에서는 테스트 버튼을 이용하세요.
+- 연결을 위해 인터넷이 필요하며, HTTPS GitHub Pages에서 실행해야 합니다.
+- 이 버전은 가벼운 프로토타입이며, 인증, 부정행위 방지, 재접속 처리, 정밀한 센서 보정은 포함하지 않습니다.
