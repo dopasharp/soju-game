@@ -3,33 +3,45 @@
     "sojuRooms": {
       "$room": {
         ".read": "auth != null",
-        ".write": "auth != null && (data.exists() ? data.child('bottleUid').val() === auth.uid : newData.child('bottleUid').val() === auth.uid)",
-        ".validate": "$room.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['bottleUid', 'createdAt'])",
-        "bottleUid": {
+        ".write": "auth != null && (data.exists() ? data.child('glassUid').val() === auth.uid : newData.child('glassUid').val() === auth.uid)",
+        ".validate": "$room.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['glassUid', 'createdAt'])",
+        "glassUid": {
           ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())"
         },
-        "glassUid": {
-          ".write": "auth != null && newData.val() === auth.uid && (!data.exists() || data.val() === auth.uid || data.parent().child('glassOnline').val() !== true)",
+        "bottleUid": {
+          ".write": "auth != null && newData.val() === auth.uid && (!data.exists() || data.val() === auth.uid || data.parent().child('bottleOnline').val() !== true)",
           ".validate": "newData.isString()"
         },
-        "glassOnline": {
-          ".write": "auth != null && newData.parent().child('glassUid').val() === auth.uid",
+        "bottleOnline": {
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid",
           ".validate": "newData.isBoolean()"
-        },
-        "amount": {
-          ".write": "auth != null && newData.parent().child('glassUid').val() === auth.uid",
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200"
         },
         "pouring": {
-          ".write": "auth != null && newData.parent().child('glassUid').val() === auth.uid",
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid",
           ".validate": "newData.isBoolean()"
         },
+        "aim": {
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid",
+          ".validate": "newData.isNumber()"
+        },
+        "tilt": {
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid",
+          ".validate": "newData.isNumber()"
+        },
+        "dir": {
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid",
+          ".validate": "newData.isNumber()"
+        },
+        "poured": {
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000"
+        },
+        "amount": {
+          ".write": "auth != null && newData.parent().child('bottleUid').val() === auth.uid && newData.val() === 0",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200"
+        },
         "createdAt": { ".validate": "newData.isNumber()" },
-        "bottleOnline": { ".validate": "newData.isBoolean()" },
-        "poured": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
-        "aim": { ".validate": "newData.isNumber()" },
-        "tilt": { ".validate": "newData.isNumber()" },
-        "dir": { ".validate": "newData.isNumber()" },
+        "glassOnline": { ".validate": "newData.isBoolean()" },
         "$other": { ".validate": false }
       }
     }
