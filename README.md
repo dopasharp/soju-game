@@ -8,22 +8,17 @@
 2. **빌드 → Realtime Database → 데이터베이스 만들기**를 선택합니다. (Firestore가 아니라 Realtime Database입니다.)
 3. **프로젝트 설정 → 내 앱 → 웹 앱 추가**에서 `firebaseConfig`를 확인합니다.
 4. `index.html` 맨 아래쪽의 `firebaseConfig`에서 `apiKey`, `authDomain`, `databaseURL`, `projectId`, `appId`를 실제 값으로 교체합니다. `databaseURL`은 Realtime Database 화면에서 제공하는 정확한 주소를 사용하세요.
-5. 테스트용으로 Realtime Database **규칙**에 아래 내용을 붙여넣고 게시합니다.
+5. **빌드 → Authentication → 시작하기 → 로그인 방법**에서 **익명(Anonymous)** 로그인을 사용 설정합니다. 게임은 접속할 때 자동으로 익명 로그인합니다.
+6. Realtime Database **규칙** 탭에 [`database.rules.json`](database.rules.json) 내용을 그대로 붙여넣고 게시합니다.
 
-```json
-{
-  "rules": {
-    "rooms": {
-      "$room": {
-        ".read": true,
-        ".write": true
-      }
-    }
-  }
-}
-```
+### 보안 규칙이 막는 것
 
-**주의:** 이 규칙은 데모 전용으로, 인터넷의 누구나 방 데이터를 읽거나 변경할 수 있습니다. 개인정보를 저장하지 마세요. 공개 서비스에는 Firebase Authentication과 보안 규칙, 방 접근 권한 검증, 요청 제한이 필요합니다. 무료 Spark 요금제 한도와 프로젝트별 설정도 확인하세요.
+- 로그인하지 않은 요청은 읽기·쓰기 모두 거부되고, 전체 방 목록은 누구도 읽을 수 없습니다.
+- 방은 만든 사람(병, `bottleUid`)만 지우거나 설정을 바꿀 수 있고, 이미 있는 방 코드를 덮어쓸 수 없습니다.
+- 잔 자리는 비어 있을 때 들어온 한 명(`glassUid`)만 차지하며, 그 사람은 `glassOnline`·`amount`·`pouring`만 바꿀 수 있습니다.
+- 정해진 필드와 타입·범위 밖의 값은 저장되지 않습니다.
+
+**주의:** 방 코드를 아는 로그인 사용자는 그 방 데이터를 읽을 수 있습니다. 개인정보를 저장하지 마세요. 스크립트로 익명 로그인해 방을 만드는 것까지 막으려면 Firebase App Check를 추가로 설정하세요.
 
 ## 2. GitHub Pages 배포
 
