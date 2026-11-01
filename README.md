@@ -44,11 +44,11 @@
 - 이 버전은 가벼운 프로토타입이며, 인증, 부정행위 방지, 재접속 처리, 정밀한 센서 보정은 포함하지 않습니다.
 ## DOPA# 브랜드 프레임
 
-`dopasharp/` 폴더는 모든 DOPASHARP 게임 저장소에 **똑같이** 복사해 쓰는 공통 디자인 시스템(v1.0)입니다. 게임 화면 색은 각 게임이 유지하고, 시작·결과·공유·다른 게임 이동·하단 브랜드 표시만 통일합니다.
+`dopasharp/` 폴더는 모든 DOPASHARP 게임 저장소에 **똑같이** 복사해 쓰는 공통 디자인 시스템(v1.1)입니다. 게임 화면 색은 각 게임이 유지하고, 시작·결과·공유·다른 게임 이동·하단 브랜드 표시만 통일합니다.
 
 - `tokens.css` — 색상·타이포·여백·모서리·모션 토큰. 브랜드 값은 여기서만 바꿉니다.
 - `components.css` — 헤더, 버튼(Primary/Secondary/Tertiary), 게임 카드, 결과 시트, 푸터.
-- `dopasharp.js` — 게임 목록(`GAMES`, 순서 = 게임 번호), 결과 시트 `DopaSharp.showResult()`, 다른 게임 시트, 공통 분석 이벤트 `DopaSharp.track()`.
+- `dopasharp.js` — 게임 목록(`GAMES`, 허브 `games.js`와 같은 순서 = 게임 번호), 결과 시트 `DopaSharp.showResult()`, "다른 게임 보기" → 허브 /games/ 연결, 공통 분석 이벤트 `DopaSharp.track()`.
 - 페이지에서는 `<meta name="dopasharp:game" content="저장소이름">`, `<header data-dopa="header">`, `<footer data-dopa="footer">`만 넣으면 됩니다.
 
 링크 미리보기 이미지는 `og/soju.html`을 고친 뒤 `og/soju.png`로 다시 렌더링합니다 (명령은 파일 맨 위 주석 참고).
