@@ -116,26 +116,38 @@ $('reset').onclick=async()=>{if(room){await update(r(),{amount:0,pouring:false})
 
 // ---------- 사운드 ----------
 // WebAudio로 즉석 합성 (음원 파일 없음). iOS 17+는 audioSession을 playback으로 둬서 무음 모드에서도 들리게 한다.
-let actx=null,master=null,noiseBuf=null,pourBed=null,nextGlug=0,lastCap=false,splashed=false;
-function unlockAudio(){if(!actx){try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch{}const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=new AC();master=actx.createGain();master.gain.value=.8;master.connect(actx.destination);noiseBuf=actx.createBuffer(1,actx.sampleRate,actx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}if(actx.state!=='running')actx.resume().catch(()=>{})}
+let actx=null,master=null,noiseBuf=null,flowBed=null,nextBubble=0,nextDrip=0,dripsLeft=0,lastGsVel=0,lastSlosh=0,lastCap=false,splashed=false;
+function unlockAudio(){if(!actx){try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch{}const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=new AC();master=actx.createGain();master.gain.value=1;master.connect(actx.destination);noiseBuf=actx.createBuffer(1,actx.sampleRate,actx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}if(actx.state!=='running')actx.resume().catch(()=>{})}
 // 터치 기기는 pointerup/touchend가 사용자 동작으로 인정돼서 둘 다 듣는다.
 for(const t of ['pointerdown','pointerup','touchend','keydown'])addEventListener(t,unlockAudio,{capture:true,passive:true});
 const audioOn=()=>actx&&actx.state==='running';
 function blip(type,from,to,at,dur,vol){const t=actx.currentTime+at,o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.setValueAtTime(from,t);o.frequency.exponentialRampToValueAtTime(to,t+dur);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.006);g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g).connect(master);o.start(t);o.stop(t+dur+.02)}
 function hiss(at,dur,freq,q,vol){const t=actx.currentTime+at,s=actx.createBufferSource(),f=actx.createBiquadFilter(),g=actx.createGain();s.buffer=noiseBuf;f.type='bandpass';f.frequency.value=freq;f.Q.value=q;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f).connect(g).connect(master);s.start(t,Math.random()*.5);s.stop(t+dur+.02)}
+// 물방울 "똑": 맑게 위로 휘는 짧은 울림
+function drop(f,vol,at=0){const t=actx.currentTime+at,o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.4,t+.045);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+.07);o.connect(g).connect(master);o.start(t);o.stop(t+.09)}
+// 출렁이는 물 "찰랑": 휙 지나가는 물소리에 작은 물방울 몇 개
+function slosh(a){const t=actx.currentTime,s=actx.createBufferSource(),f=actx.createBiquadFilter(),g=actx.createGain();s.buffer=noiseBuf;f.type='bandpass';f.Q.value=1.5;f.frequency.setValueAtTime(500+Math.random()*300,t);f.frequency.exponentialRampToValueAtTime(1400,t+.12);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.22*a,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+.22);s.connect(f).connect(g).connect(master);s.start(t,Math.random()*.5);s.stop(t+.25);
+ for(let i=0;i<3;i++)if(Math.random()<.7)drop(1200+Math.random()*1400,.05*a,.04+Math.random()*.12)}
 const sfx={
  capOpen(){hiss(0,.04,3000,2,.25);hiss(.07,.04,3400,2,.2);blip('sine',380,1400,.16,.09,.35);hiss(.16,.12,1800,.8,.18)}, // 딸깍딸깍 "뽕!"
  capClose(){hiss(0,.03,2600,2,.2);blip('triangle',900,700,0,.05,.08)},
- glug(fill){const f=(170+fill*260)*(1+(Math.random()-.5)*.2);blip('sine',f*.7,f*1.6,0,.07,.18)}, // 꼴깍: 잔이 찰수록 높아진다
- splash(){hiss(0,.35,900,.7,.35);hiss(.05,.25,2400,1,.15)},
+ splash(){hiss(0,.3,700,.7,.3);for(let i=0;i<6;i++)drop(700+Math.random()*1500,.1,Math.random()*.25)}, // 넘쳐서 바닥에 쏟아짐
  clink(){[2490,3730,5210,6850].forEach((f,i)=>blip('sine',f,f*.998,0,1.4-i*.25,.12/(i+1)));blip('sine',2515,2490,.09,.9,.05)} // 짠!
 };
 function play(name,...args){if(audioOn())sfx[name](...args)}
-// 따르는 동안 "쪼르르" 물소리 + 불규칙한 "꼴꼴꼴"
-function pourSound(on,fill){if(!audioOn())return;const t=actx.currentTime;
- if(on&&!pourBed){const s=actx.createBufferSource(),f=actx.createBiquadFilter(),g=actx.createGain();s.buffer=noiseBuf;s.loop=true;f.type='bandpass';f.Q.value=3;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.08,t+.08);s.connect(f).connect(g).connect(master);s.start();pourBed={s,f,g}}
- if(pourBed){pourBed.f.frequency.setTargetAtTime(700+fill*1500,t,.1);if(!on){pourBed.g.gain.setTargetAtTime(.0001,t,.05);pourBed.s.stop(t+.3);pourBed=null}}
- if(on&&performance.now()>nextGlug){nextGlug=performance.now()+90+Math.random()*140;sfx.glug(fill)}}
+// 물소리. 병: 물 내려가는 소리 + 병 속으로 공기 들어가는 꼬르륵. 잔: 잔이 찰수록 울림이 높아지는 물 받는 소리 + 잔잔한 거품.
+// 따르기를 멈추면 똑…똑 떨어지고, 잔을 움직이면 소주가 찰랑인다.
+function waterSound(now){if(!audioOn())return;const v=visual3d,t=actx.currentTime,fill=Math.min(1,amount/100),bottle=role==='bottle';
+ const flowing=bottle?(v?v.streamWas:wasActive):!!latest.pouring&&connected,landing=!bottle&&(v?v.streamHit:flowing);
+ if(flowing&&!flowBed){const src=actx.createBufferSource(),lp=actx.createBiquadFilter(),bp=actx.createBiquadFilter(),g=actx.createGain();src.buffer=noiseBuf;src.loop=true;lp.type='lowpass';bp.type='bandpass';bp.Q.value=1.2;g.gain.value=.0001;src.connect(lp).connect(bp).connect(g).connect(master);src.start();flowBed={src,lp,bp,g}}
+ if(flowBed){flowBed.g.gain.setTargetAtTime(!flowing?.0001:bottle?.22:landing?.26:.11,t,flowing?.06:.12);
+  flowBed.bp.frequency.setTargetAtTime(bottle?650+Math.random()*250:landing?500+fill*1900:1500,t,.05);
+  flowBed.lp.frequency.setTargetAtTime(bottle?1100:landing?1400+fill*2600:2400,t,.1);
+  if(!flowing){flowBed.src.stop(t+.6);flowBed=null;dripsLeft=bottle?3:2;nextDrip=now+250}}
+ if(flowing&&now>nextBubble){if(bottle){nextBubble=now+120+Math.random()*260;drop(260+Math.random()*220,.12)}
+  else{nextBubble=now+25+Math.random()*60;drop((landing?700+fill*1600:1100)*(.75+Math.random()*.5),landing?.05:.035)}}
+ if(!flowing&&dripsLeft>0&&now>nextDrip){dripsLeft--;nextDrip=now+300+Math.random()*450;drop(900+Math.random()*700,.14)}
+ if(!bottle&&v&&fill>.04){const gs=v.gs;if(Math.sign(gs.vel)!==Math.sign(lastGsVel)&&gs.agit>.12&&now-lastSlosh>140){lastSlosh=now;slosh(Math.min(1,gs.agit)*Math.min(1,.4+fill))}lastGsVel=gs.vel}}
 
 // Physical roll of the bottle phone in degrees, counter-clockwise (top toward the left) positive.
 // Gravity gives it without the gimbal lock gamma has when the phone is upright; gamma (right side down = positive) is the fallback.
@@ -511,6 +523,6 @@ function animate3D(now,active){
 function drops(x,y){let d=document.createElement('i');d.className='drop';d.style.left=x+'px';d.style.top=y+'px';$('water').appendChild(d);setTimeout(()=>d.remove(),560)}
 async function tick(now){requestAnimationFrame(tick);const tickDt=Math.min(.1,(now-lastTick)/1000);lastTick=now;if(!room||!latest)return;let towardGlass=Math.abs(physRoll())>28;const wantsPour=role==='bottle'&&(manual||towardGlass)&&connected&&poured<BOTTLE_UNITS;/* Only an opened bottle pours; tipping a capped one just sloshes inside. */let active=wantsPour&&capOpen;if(wantsPour&&!capOpen&&now-lastCapHint>3000){lastCapHint=now;showToast('🍾 뚜껑부터 따세요! 병뚜껑을 두 번 탭하세요')}/* Aim: centred, steered by sliding the bottle left/right (14cm = one screen width, at most about a third of it).
    Each pour starts centred so drift picked up beforehand can't push the stream off the glass. Front/back tilt is
-   left out: once the phone is tipped sideways, beta mostly reflects the tip (gimbal lock), not a lean. */if(active&&!wasActive){sway=swayVel=0}wasActive=active;aimSm+=(Math.max(.05,Math.min(.95,.5+sway/.14))-aimSm)*.2;let aim=aimSm;animate3D(now,active);if(role==='bottle'&&capOpen!==lastCap){lastCap=capOpen;play(capOpen?'capOpen':'capClose')}pourSound(role==='bottle'?(visual3d?visual3d.streamWas:active):!!latest.pouring&&connected,Math.min(1,amount/100));if(amount<100)splashed=false;else if(amount>=104&&latest.pouring&&!splashed){splashed=true;play('splash')}if(role==='bottle'){$('stream').classList.add('hidden');/* What actually leaves the bottle drives its level, so it keeps pouring past a full glass until it runs dry. */if(visual3d?visual3d.streamWas:active)poured=Math.min(BOTTLE_UNITS,poured+POUR_RATE*tickDt);/* physical phone tilts, not the bottle drawing */if(now-lastSend>120){lastSend=now;update(r(),{pouring:active,aim,tilt:manual?55:Math.round(Math.abs(physRoll())),poured:Math.round(poured*10)/10,dir:pourSide()}).catch(()=>{});}if(active&&Math.random()<.65)drops(stage.clientWidth*aim,stage.clientHeight*spoutY)}else{const stream=$('stream');stream.classList.toggle('hidden',!latest.pouring);if(latest.pouring){stream.style.left=`calc(${(latest.aim??.5)*100}% - 4px)`;stream.style.top='0';stream.style.height='72%';if(Math.random()<.7)drops(stage.clientWidth*(latest.aim??.5),stage.clientHeight*.45);}if(latest.pouring&&connected&&amount<AMOUNT_MAX){const hit=visual3d?visual3d.streamHit:Math.abs((latest.aim??.5)-glassX)<($('glass').offsetWidth/stage.clientWidth)/2; if(hit&&now-lastSend>150){lastSend=now;runTransaction(ref(db,'sojuRooms/'+room+'/amount'),v=>Math.min(AMOUNT_MAX,(v||0)+POUR_RATE*.15),{applyLocally:false}).catch(()=>{});}}}}
+   left out: once the phone is tipped sideways, beta mostly reflects the tip (gimbal lock), not a lean. */if(active&&!wasActive){sway=swayVel=0}wasActive=active;aimSm+=(Math.max(.05,Math.min(.95,.5+sway/.14))-aimSm)*.2;let aim=aimSm;animate3D(now,active);if(role==='bottle'&&capOpen!==lastCap){lastCap=capOpen;play(capOpen?'capOpen':'capClose')}waterSound(now);if(amount<100)splashed=false;else if(amount>=104&&latest.pouring&&!splashed){splashed=true;play('splash')}if(role==='bottle'){$('stream').classList.add('hidden');/* What actually leaves the bottle drives its level, so it keeps pouring past a full glass until it runs dry. */if(visual3d?visual3d.streamWas:active)poured=Math.min(BOTTLE_UNITS,poured+POUR_RATE*tickDt);/* physical phone tilts, not the bottle drawing */if(now-lastSend>120){lastSend=now;update(r(),{pouring:active,aim,tilt:manual?55:Math.round(Math.abs(physRoll())),poured:Math.round(poured*10)/10,dir:pourSide()}).catch(()=>{});}if(active&&Math.random()<.65)drops(stage.clientWidth*aim,stage.clientHeight*spoutY)}else{const stream=$('stream');stream.classList.toggle('hidden',!latest.pouring);if(latest.pouring){stream.style.left=`calc(${(latest.aim??.5)*100}% - 4px)`;stream.style.top='0';stream.style.height='72%';if(Math.random()<.7)drops(stage.clientWidth*(latest.aim??.5),stage.clientHeight*.45);}if(latest.pouring&&connected&&amount<AMOUNT_MAX){const hit=visual3d?visual3d.streamHit:Math.abs((latest.aim??.5)-glassX)<($('glass').offsetWidth/stage.clientWidth)/2; if(hit&&now-lastSend>150){lastSend=now;runTransaction(ref(db,'sojuRooms/'+room+'/amount'),v=>Math.min(AMOUNT_MAX,(v||0)+POUR_RATE*.15),{applyLocally:false}).catch(()=>{});}}}}
 requestAnimationFrame(tick);
 </script></body></html>
